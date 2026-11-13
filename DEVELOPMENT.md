@@ -13,7 +13,7 @@ TabExporter 是一个「配置表选择性导出 + 部署」桌面工具，技�
 | 前端 | 原生 HTML/CSS/JS（单文件） | `gui/index.html`，无框架、无构建步骤 |
 | 后端 | Python 3（标准库 + openpyxl） | `app.py` + `export_tables.py` |
 | 导出核心 | tabtoy.exe（第三方 Go 工具） | 负责把 Excel 转成 bin/json/csharp/proto |
-| 桌面壳 | pywebview（可选） | 有则弹独立窗口；无则退化为浏览器模式 |
+| 桌面壳 | pywebview 5.x | exe 独立窗口；源码模式用浏览器 |
 
 **一句话架构**：前端（单页）通过统一 API 层调用后端 Python 函数，后端构造「精简 Index.xlsx」后调用 `tabtoy.exe` 完成导出。
 
@@ -23,13 +23,13 @@ TabExporter 是一个「配置表选择性导出 + 部署」桌面工具，技�
 
 ```
 TabExporter/
-├── app.py              后端主程序（状态 + 业务函数 + 双运行壳）
+├── app.py              后端主程序（多页签 / 导出 / 移动 / 双运行壳）
 ├── export_tables.py    核心库（纯逻辑，可命令行单独运行）
 ├── launcher.py         启动器（依赖检查 + 启动 app）
 ├── gui/index.html      前端界面（单文件）
 ├── tabtoy.exe          tabtoy 二进制（第三方）
 ├── run.bat / build_exe.bat
-├── requirements.txt
+├── requirements.txt    pywebview 锁定 5.x
 └── tool_config.json    本地配置（运行时生成，gitignore）
 ```
 
@@ -39,38 +39,50 @@ TabExporter/
 
 ### 3.1 工具目录 vs 工作目录
 
-这是本工具最重要的设计分离：
+- **工具目录（TOOL_DIR）**：`app.py` / `export_tables.py` 所在目录，存放工具代码 + `tabtoy.exe` + `gui/`。
+- **工作目录（WORK_DIR）**：存放 `Index.xlsx`、`*.xlsx`、`out/` 的**配置表目录**（例如 `res01`）。由用户指定，可多页签切换。
 
-- **工具目录（TOOL_DIR）**：`app.py` / `export_tables.py` 所在目录，存放工具代码 + `tabtoy.exe` + `gui/`。运行时通过 `os.path.dirname(os.path.abspath(__file__))` 得到。
-- **工作目录（WORK_DIR）**：存放 `Index.xlsx`、`*.xlsx`、`out/` 的**配置表目录**（例如 `res01`）。运行时由用户指定/切换。
+### 3.2 多页签（多工作目录）
 
-两者解耦后，同一份工具可对任意配置表目录操作。
+配置表里持久化**多个工作目录**，每个是一个页签：
 
-- `app.py` 中：`TOOL_DIR` 固定，`WORK_DIR` 是全局变量。
-- `export_tables.py` 中：`SCRIPT_DIR` 是工具目录，`WORK_DIR` 是全局变量（默认 `os.getcwd()`，被 `app.py` 覆盖为 `et.WORK_DIR = 工作目录`）。
+```json
+{
+  "work_dirs": [".../dev01", ".../res01"],
+  "active_work_dir": ".../dev01",
+  "project_path": "..."
+}
+```
 
-### 3.2 双运行模式
+- `set_work_dir(path)`：切换工作目录，并**自动加入** `work_dirs`（路径经 `normpath` 规范化 + 去重，避免正/反斜杠重复）。
+- `get_tabs()`：返回 `{tabs, active}`。
+- `remove_tab(path)`：移除页签；若移除的是当前激活页签，切到剩余第一个。
+- 前端每个页签独立保存选择状态到 `tabStates`（内存 + `localStorage` 持久化）。
 
-`app.py` 的 `main()` 探测 `pywebview` 是否可 import：
+### 3.3 双运行模式
 
-- 可用 → `run_webview()`：`webview.create_window(js_api=Api())`，前端通过 `pywebview.api.xxx()` 调用后端。
-- 不可用 → `run_browser()`：`http.server` 起本地服务，前端通过 `fetch('/api/xxx')` 调用后端。
+`app.py` 的 `main()` 决定运行模式：
 
-**前端无需关心用哪种模式**——`gui/index.html` 里的 `api` 对象统一封装了两者（见 §6.1）。
+- 环境变量 `TABEXPORTER_NO_WEBVIEW=1`（`run.bat` 设置）→ `run_browser()`：`http.server` + `fetch('/api/xxx')`。
+- 否则（含打包 exe）→ `run_webview()`：pywebview 独立窗口，`pywebview.api.xxx()`。
+
+> 前端通过 `api` 对象统一封装两种模式；启动时用 `window.chrome.webview` 判断是否 WebView2 环境，是则等 `pywebviewready` 事件再初始化（见 §11.6）。
 
 ---
 
 ## 4. 后端 app.py
 
-### 4.1 全局状态
+### 4.1 全局状态与路径
 
 | 变量 | 含义 |
 |---|---|
 | `TOOL_DIR` | 工具目录 |
-| `CONFIG_FILE` | `TOOL_DIR/tool_config.json` |
-| `WORK_DIR` | 工作目录（运行时确定，空串表示未设置） |
+| `_data_dir()` | 持久数据目录：打包 exe 后 = `sys.executable` 所在目录；源码 = `TOOL_DIR` |
+| `CONFIG_FILE` | `_data_dir()/tool_config.json` |
+| `WORK_DIR` | 当前激活的工作目录（空串表示未设置） |
 | `et` | import 进来的 `export_tables` 模块 |
-| `HTML_PATH` | 前端页面路径（打包后经 `resource_path` 定位） |
+
+> 关键：exe（PyInstaller onefile）下 `__file__` 指向临时 `_MEIPASS`，退出即删，所以 `CONFIG_FILE` 必须用 `_data_dir()`（exe 目录）持久化，否则配置每次丢失。
 
 ### 4.2 函数清单
 
@@ -78,11 +90,13 @@ TabExporter/
 |---|---|---|
 | `resource_path(rel)` | 打包后从 `_MEIPASS` 定位资源 | 绝对路径 |
 | `is_valid_work_dir(path)` | 校验目录含 `Index.xlsx` | bool |
-| `get_config()` / `save_config(...)` | 读写 `tool_config.json`（`work_dir` / `project_path`） | dict / None |
-| `get_work_dir()` / `set_work_dir(path)` | 读/设工作目录（设置时会同步 `et.WORK_DIR` 并持久化） | str / `{ok, log}` |
-| `list_tables()` | 读工作目录的 `Index.xlsx`，返回全部数据表 | `[{name,file,tag,desc}]` |
+| `get_config()` | 读 `tool_config.json`，含旧 `work_dir` 迁移 + 路径规范化 | dict |
+| `save_config(work_dirs, active_work_dir, project_path)` | 持久化配置 | None |
+| `get_work_dir()` / `set_work_dir(path)` | 读/切工作目录（自动加页签） | str / `{ok, log, tabs, active}` |
+| `get_tabs()` / `remove_tab(path)` | 列页签 / 移除页签 | `{tabs, active}` / `{ok, log, tabs, active}` |
+| `list_tables()` | 读工作目录 `Index.xlsx`，返回全部数据表 | `[{name,file,tag,desc}]` |
 | `_decode(b)` | 解码 tabtoy 输出（utf-8 → gbk 逐种尝试） | str |
-| `_run_tabtoy(cmd, cwd)` | 执行 tabtoy 并捕获日志（失败降级直连控制台） | `(ok, log)` |
+| `_run_tabtoy(cmd, cwd)` | 执行 tabtoy 并捕获日志 | `(ok, log)` |
 | `export_tables(names, mode)` | 部分导出（核心业务） | `{ok, log}` |
 | `choose_dir()` | tkinter 弹目录选择框 | 路径或空串 |
 | `move_tables(names, project_path, move_cs)` | 复制 bin→bytes 到客户端 | `{ok, log}` |
@@ -140,13 +154,16 @@ tabtoy 没有「只导某几张表」的参数，它只认 `-index` 指向的 In
 
 ### 6.1 统一 API 层
 
-前端 `api` 对象是唯一访问后端的入口，内部自动分流：
+前端 `api` 对象是唯一访问后端的入口，内部自动分流 pywebview / http：
 
 ```js
 const api = {
-  async listTables(){ return window.pywebview ? await pywebview.api.list_tables()
-                                             : await (await fetch('/api/list')).json(); },
-  // exportTables / moveTables / getConfig / getWorkDir / setWorkDir / chooseDir 同理
+  async getConfig(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.get_config();
+    const r = await fetch('/api/config'); return await r.json();
+  },
+  // listTables / exportTables / moveTables / getTabs / removeTab / setWorkDir / chooseDir 同理
 };
 ```
 
@@ -155,23 +172,40 @@ const api = {
 ### 6.2 状态与渲染
 
 ```js
-let allTables = [];   // 左列表全部（含搜索过滤前的原始数据）
-let rightSet  = [];   // 右侧待导出表名（有序）
+let allTables = [];      // 左列表全部
+let rightSet  = [];      // 右侧待导出表名（有序）
 let selLeft / selRight = new Set();  // 两侧选中项
-let mode = 'c';       // 导出模式（默认仅客户端）
-let workDir = '';     // 工作目录
+let mode = 'c';          // 导出模式（默认仅客户端）
+let workDir = '';        // 当前工作目录
+let tabs = [];           // 页签列表（工作目录路径）
+let tabStates = {};      // 每页签独立状态 {path: {rightSet, selLeft, selRight, search}}
 ```
 
-- `renderWorkDir()` 渲染顶部工作目录显示
-- `renderLeft()` / `renderRight()` 渲染两侧列表
+- `renderTabs()` / `renderWorkDir()` / `renderLeft()` / `renderRight()` 渲染各区域
+- `saveCurrentState()` / `restoreState(path)`：切页签时保存/恢复状态（`restoreState` 用**原地更新** `clear()+add()`，不能重新赋值 Set，否则 `bindList` 闭包持有的引用脱节）
 - `log(msg, cls)` 写底部日志区
 
 ### 6.3 交互入口
 
-- `bindList(...)`：单击选中（Ctrl 多选）、双击添加/移除
-- `doExport()`：收集 `rightSet` + `mode` 调 `api.exportTables`
-- `doMove()`：收集 `rightSet` + 项目路径 + 勾选 `chkMoveCs` 调 `api.moveTables`
-- `switchWorkDir()`：选目录 → `setWorkDir` → 清空右侧 → 重新 `load()`
+- `bindList(...)`：单击选中、Ctrl 多选、**Shift 范围多选**、双击添加/移除
+- `switchTab(path)` / `addTab()` / `removeTab(path)`：页签切换/新增/关闭
+- `doExport()` / `doMove()`：导出 / 移动
+- 空格键：对当前选中项快速移动（左→右添加 / 右→左移除）
+- `initDivider()` / `initDividerH()`：左右分栏 / 日志栏高度拖动
+
+### 6.4 启动时序
+
+页面脚本末尾不直接调 `init()`，而是：
+
+```js
+if(window.chrome && window.chrome.webview){
+  // WebView2(pywebview)：等 pywebviewready(js_api 注册完成) 再 init
+  if(window.pywebview?.api && Object.keys(window.pywebview.api).length) _boot();
+  else { window.addEventListener('pywebviewready', _boot, {once:true}); setTimeout(_boot, 3000); }
+} else {
+  _boot();  // 普通浏览器：直接 init
+}
+```
 
 ---
 
@@ -185,9 +219,11 @@ let workDir = '';     // 工作目录
 | `api.getConfig()` | `Api.get_config` | `GET /api/config` |
 | `api.getWorkDir()` | `Api.get_work_dir` | `GET /api/work_dir` |
 | `api.setWorkDir(path)` | `Api.set_work_dir` | `POST /api/set_work_dir` |
+| `api.getTabs()` | `Api.get_tabs` | `GET /api/tabs` |
+| `api.removeTab(path)` | `Api.remove_tab` | `POST /api/remove_tab` |
 | `api.chooseDir()` | `Api.choose_dir` | `POST /api/choose_dir` |
 
-注意：pywebview 的方法名保持 Python 下划线风格（`set_work_dir`），http 端点是斜杠风格。
+注意：pywebview 的方法名保持 Python 下划线风格（`get_tabs`），http 端点是斜杠风格。
 
 ---
 
@@ -306,6 +342,28 @@ tabtoy 输出可能是 GBK 或 UTF-8。`_decode()` 逐种尝试解码，**不要
 
 某些受限环境禁止捕获子进程 stdio（`capture_output` 报 EPERM）。`_run_tabtoy` 已做降级：捕获失败时改用继承 stdio。
 
+### 11.6 pywebview 6.x js_api 时序 bug（重要）
+
+现象：独立窗口下随机报 `getConfig 异常: SyntaxError: Unexpected token <!DOCTYPE...`，浏览器模式正常。
+
+原因：pywebview 的 js_api（`window.pywebview`）是**异步注入**的，前端 `init()` 执行太早时 `window.pywebview` 尚未注入，前端误走 `fetch('/api/config')`，而 pywebview 内部的 bottle 服务器没有 `/api/config`，返回 404 HTML。
+
+解法：
+1. **pywebview 锁定 5.x**（`requirements.txt` 的 `pywebview>=5.0,<6`），6.2.1 更易触发；
+2. 前端用 `window.chrome.webview` 判断是否 WebView2 环境，是则**等 `pywebviewready` 事件**再 `init()`（见 §6.4）。
+
+### 11.7 exe 下配置丢失（_MEIPASS）
+
+PyInstaller `--onefile` 下 `__file__` 指向临时解压目录 `_MEIPASS`，退出即删，导致写在那里的 `tool_config.json` 每次丢失。
+
+解法：`CONFIG_FILE` 用 `_data_dir()`（`sys.frozen` 时取 `sys.executable` 所在目录），配置持久化到 exe 旁边。
+
+### 11.8 路径正/反斜杠导致重复页签
+
+同一目录因正斜杠（`C:/...`）与反斜杠（`C:\...`）不同会被判为两个页签。
+
+解法：`get_config()` 里对 `work_dirs` 和 `active_work_dir` 统一 `os.path.normpath` 并去重。
+
 ---
 
 ## 12. 扩展指南
@@ -340,4 +398,4 @@ pyinstaller --onefile --windowed --name ExportTables \
   app.py
 ```
 
-打包后 `sys._MEIPASS` 指向解压临时目录，`resource_path()` 和 `SCRIPT_DIR` 会自动适配（`__file__` 指向 `_MEIPASS`），因此 `tabtoy.exe` 和 `gui/` 都能被正确找到。
+打包后 `sys._MEIPASS` 指向解压临时目录，`resource_path()` 和 `SCRIPT_DIR` 会自动适配（`__file__` 指向 `_MEIPASS`），因此 `tabtoy.exe` 和 `gui/` 都能被正确找到；但**持久配置**（`tool_config.json`）必须用 `_data_dir()`（exe 目录），见 §11.7。

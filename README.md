@@ -8,11 +8,12 @@
 
 ## 特性
 
+- **多页签**：每个工作目录一个页签，快速切换；各页签独立保留自己的选择状态
 - **双列表交互**：左侧全部配置表（可搜索），右侧待导出表，点击/双击添加移除
 - **选择性导出**：只导出选中的表，生成客户端 `.bin` + C#、服务端 JSON + Proto
-- **工作目录可切换**：工具与「配置表目录」分离，可对任意配置表目录操作
 - **一键部署**：把 `.bin` 复制为 `.bytes` 到 Unity 客户端（`config.cs` 可选）
-- **双运行模式**：装了 `pywebview` 弹独立窗口，否则自动用浏览器打开
+- **独立窗口 / 浏览器双模式**：exe 为独立窗口（pywebview），源码 `run.bat` 为浏览器
+- **多选与快捷键**：Shift 范围多选、空格键快速移动、左右分栏/日志栏拖动
 - **路径记忆**：工作目录、项目路径自动保存，下次启动带出
 
 ## 目录结构
@@ -33,15 +34,12 @@ TabExporter/
 
 ## 快速开始
 
-### 运行（源码模式）
+### 运行（源码模式，浏览器）
 
 1. 安装 Python 3.10+（勾选 "Add to PATH"）
-2. 双击 `run.bat`
+2. 双击 `run.bat`（自动打开浏览器）
 3. 首次运行会自动安装 `openpyxl`（需联网）
-4. 界面顶部点「切换工作目录…」，选择配置表目录（含 `Index.xlsx` 的目录）
-
-> 未安装 `pywebview` 时自动用浏览器打开，功能完全一致；如需独立窗口：
-> `python -m pip install pywebview`
+4. 界面顶部点「+」或「添加页签…」，选择配置表目录（含 `Index.xlsx` 的目录）
 
 也可命令行直接指定工作目录：
 
@@ -49,9 +47,9 @@ TabExporter/
 python launcher.py "C:\path\to\config\res01"
 ```
 
-### 打包成 exe
+### 打包成 exe（独立窗口）
 
-双击 `build_exe.bat`，产物在 `dist\ExportTables.exe`。
+双击 `build_exe.bat`，产物在 `dist\ExportTables.exe`，双击弹出独立窗口（内置 pywebview 5.x）。
 
 > 目标电脑需已装 WebView2 Runtime（Win10/11 一般自带）。
 
@@ -59,12 +57,15 @@ python launcher.py "C:\path\to\config\res01"
 
 | 区域 | 说明 |
 |---|---|
-| 工作目录 | 顶部显示当前配置表目录，点「切换工作目录…」更换 |
-| 左侧列表 | 全部配置表，顶部可搜索；单击选中，Ctrl+点击多选，双击直接添加 |
+| 页签栏 | 每个工作目录一个页签，点击切换；「+」或「添加页签…」新增；页签上的 × 关闭 |
+| 工作目录 | 显示当前页签的完整路径 |
+| 左侧列表 | 全部配置表，顶部可搜索；单击选中，Ctrl+单击多选，Shift+单击范围多选，双击直接添加 |
 | 中间按钮 | ➜ 添加选中 · ⏩ 添加全部(当前筛选) · ⏪ 移除选中 · ✖ 清空 |
 | 右侧列表 | 待导出表，双击移除 |
-| 模式 | 两端 / 仅客户端 / 仅服务端，点「开始导出」 |
+| 快捷键 | 空格键 = 对当前选中项快速移动（左→右添加 / 右→左移除） |
+| 模式 | 两端 / 仅客户端 / 仅服务端（默认仅客户端），点「开始导出」 |
 | 部署栏 | 填「项目路径」（客户端项目根目录），勾选「移动 config.cs」后点「移动」 |
+| 布局 | 左右分栏、日志栏高度均可拖动调整，自动记住 |
 | 日志 | 底部实时显示导出/移动日志 |
 
 移动时的相对目录（相对「项目路径」）：
@@ -93,7 +94,7 @@ python export_tables.py --dir <工作目录> --list                    # 列出�
 
 - [tabtoy](https://github.com/davyxu/tabtoy)（MIT）—— 配置表导出核心，本仓库内置其 `tabtoy.exe` 用于运行
 - [openpyxl](https://openpyxl.readthedocs.io/)（MIT）—— 读取 `Index.xlsx`
-- [pywebview](https://pywebview.flowrl.com/)（BSD-3-Clause，可选）—— 桌面窗口壳
+- [pywebview](https://pywebview.flowrl.com/)（BSD-3-Clause，5.x）—— exe 独立窗口壳
 
 ## License
 
