@@ -30,7 +30,7 @@ def _data_dir():
 
 CONFIG_FILE = os.path.join(_data_dir(), "tool_config.json")
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 GITHUB_REPO = "bbbz000/TabExporter"
 
 # 复用 export_tables.py 的纯逻辑函数
@@ -404,13 +404,16 @@ def apply_update():
         exe_name = os.path.basename(exe_path)
         bat = (
             "@echo off\r\n"
+            "chcp 936 >nul\r\n"
+            ":wait\r\n"
             "ping 127.0.0.1 -n 2 >nul\r\n"
-            f'del "{exe_path}"\r\n'
+            f'del "{exe_path}" 2>nul\r\n'
+            f'if exist "{exe_path}" goto wait\r\n'
             f'ren "{new_path}" "{exe_name}"\r\n'
             f'start "" "{exe_path}"\r\n'
             'del "%~f0"\r\n'
         )
-        with open(bat_path, "w", encoding="utf-8") as f:
+        with open(bat_path, "w", encoding="gbk") as f:
             f.write(bat)
         subprocess.Popen(["cmd", "/c", bat_path], cwd=exe_dir, close_fds=True)
         # 延迟退出，让前端有时间显示日志
