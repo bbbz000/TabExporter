@@ -87,6 +87,9 @@
   .btn-primary{background:var(--primary); color:#fff;}
   .btn-primary:hover{background:var(--primary-h);}
   .btn-primary:disabled{background:#b6c4e0; cursor:not-allowed;}
+  .btn-accent{background:var(--accent); color:#fff;}
+  .btn-accent:hover{background:#0ea371;}
+  .btn-accent:disabled{background:#a7d9c5; cursor:not-allowed;}
   .btn-ghost{background:#fff; border:1px solid var(--border); color:var(--text);}
   .btn-ghost:hover{border-color:var(--primary); color:var(--primary);}
   main{
@@ -180,6 +183,7 @@
       </div>
       <button class="btn btn-ghost" id="btnRefresh">刷新列表</button>
       <button class="btn btn-primary" id="btnExport">开始导出</button>
+      <button class="btn btn-accent" id="btnExportMove">导出并移动</button>
     </div>
     <div class="bar">
       <span class="lbl">工作目录</span>
@@ -493,6 +497,37 @@ async function doMove(){
   }
 }
 
+async function doExportAndMove(){
+  if(!workDir){ log('请先设置工作目录', 'err'); return; }
+  if(!rightSet.length){ log('待导出列表为空', 'err'); return; }
+  const p = $('projectPath').value.trim();
+  if(!p){ log('请先设置项目路径', 'err'); return; }
+  const btn = $('btnExportMove');
+  btn.disabled = true;
+  log(`开始导出并移动 ${rightSet.length} 张表...`);
+  try{
+    const res = await api.exportTables([...rightSet], mode);
+    if(res && res.log){
+      res.log.split(/\r?\n/).forEach(l=>{ if(l.trim()) log(l, res.ok ? '' : 'err'); });
+    }
+    if(!res || !res.ok){
+      log('❌ 导出失败，已跳过移动', 'err');
+      return;
+    }
+    log('✅ 导出完成，开始移动...');
+    const res2 = await api.moveTables([...rightSet], p, $('chkMoveCs').checked);
+    if(res2 && res2.log){
+      res2.log.split(/\r?\n/).forEach(l=>{ if(l.trim()) log(l, res2.ok ? '' : 'err'); });
+    }
+    if(res2 && res2.ok) log('✅ 导出并移动完成', 'ok');
+    else log('❌ 移动失败', 'err');
+  }catch(e){
+    log('导出并移动异常: ' + e, 'err');
+  }finally{
+    btn.disabled = false;
+  }
+}
+
 // ---------- 页签 ----------
 function esc(s){
   return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -667,6 +702,7 @@ async function init(){
   $('btnRemove').onclick = removeSelected;
   $('btnClear').onclick = clearRight;
   $('btnExport').onclick = doExport;
+  $('btnExportMove').onclick = doExportAndMove;
   $('btnMove').onclick = doMove;
   $('btnBrowse').onclick = async ()=>{
     const p = await api.chooseDir();
