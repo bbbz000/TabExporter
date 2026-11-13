@@ -38,18 +38,36 @@ def is_valid_work_dir(path):
 
 
 def get_config():
-    """读取持久化配置(工作目录 / 项目路径)。"""
+    """读取持久化配置(页签工作目录 / 项目路径)。"""
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            cfg = json.load(f)
     except Exception:
-        return {"work_dir": "", "project_path": ""}
+        cfg = {}
+    # 向后兼容：旧版 work_dir 字段迁移为 work_dirs + active_work_dir
+    if "work_dirs" not in cfg:
+        old = cfg.get("work_dir", "")
+        cfg["work_dirs"] = [old] if old else []
+        cfg["active_work_dir"] = old
+        cfg.pop("work_dir", None)
+    if "active_work_dir" not in cfg:
+        dirs = cfg.get("work_dirs", [])
+        cfg["active_work_dir"] = dirs[0] if dirs else ""
+    # 规范化路径，避免同一目录因正/反斜杠不同而被重复添加
+    cfg["work_dirs"] = list(dict.fromkeys(
+        os.path.normpath(d) for d in cfg.get("work_dirs", []) if d
+    ))
+    if cfg.get("active_work_dir"):
+        cfg["active_work_dir"] = os.path.normpath(cfg["active_work_dir"])
+    return cfg
 
 
-def save_config(work_dir=None, project_path=None):
+def save_config(work_dirs=None, active_work_dir=None, project_path=None):
     cfg = get_config()
-    if work_dir is not None:
-        cfg["work_dir"] = work_dir
+    if work_dirs is not None:
+        cfg["work_dirs"] = work_dirs
+    if active_work_dir is not None:
+        cfg["active_work_dir"] = active_work_dir
     if project_path is not None:
         cfg["project_path"] = project_path
     try:
@@ -63,16 +81,42 @@ def get_work_dir():
     return WORK_DIR
 
 
+def get_tabs():
+    """返回所有页签(工作目录)和当前激活目录。"""
+    cfg = get_config()
+    dirs = [d for d in cfg.get("work_dirs", []) if d]
+    return {"tabs": dirs, "active": WORK_DIR or cfg.get("active_work_dir", "")}
+
+
 def set_work_dir(path):
-    """切换工作目录并持久化。返回 {ok, log}。"""
+    """切换工作目录(自动加入页签)并持久化。返回 {ok, log, tabs, active}。"""
     global WORK_DIR
-    path = (path or "").strip().strip('"')
+    path = os.path.normpath((path or "").strip().strip('"'))
     if not is_valid_work_dir(path):
         return {"ok": False, "log": f"无效工作目录(需包含 Index.xlsx): {path}"}
     WORK_DIR = path
     et.WORK_DIR = path
-    save_config(work_dir=path)
-    return {"ok": True, "log": f"工作目录已切换: {path}"}
+    cfg = get_config()
+    dirs = [d for d in cfg.get("work_dirs", []) if d]
+    if path not in dirs:
+        dirs.append(path)
+    save_config(work_dirs=dirs, active_work_dir=path)
+    return {"ok": True, "log": f"工作目录已切换: {path}", "tabs": dirs, "active": path}
+
+
+def remove_tab(path):
+    """移除一个页签；若移除的是当前激活页签，则切到剩余第一个。"""
+    global WORK_DIR
+    path = os.path.normpath((path or "").strip().strip('"'))
+    cfg = get_config()
+    dirs = [d for d in cfg.get("work_dirs", []) if d and d != path]
+    active = cfg.get("active_work_dir", "")
+    if active == path or active not in dirs:
+        active = dirs[0] if dirs else ""
+        WORK_DIR = active
+        et.WORK_DIR = active
+    save_config(work_dirs=dirs, active_work_dir=active)
+    return {"ok": True, "log": f"已移除页签: {path}", "tabs": dirs, "active": active}
 
 
 def list_tables():
@@ -301,6 +345,12 @@ def run_webview():
         def set_work_dir(self, path):
             return set_work_dir(path)
 
+        def get_tabs(self):
+            return get_tabs()
+
+        def remove_tab(self, path):
+            return remove_tab(path)
+
         def choose_dir(self):
             return choose_dir()
 
@@ -332,6 +382,8 @@ def _api_handler():
                 self._send(200, json.dumps(get_config(), ensure_ascii=False))
             elif self.path == "/api/work_dir":
                 self._send(200, json.dumps({"work_dir": get_work_dir()}, ensure_ascii=False))
+            elif self.path == "/api/tabs":
+                self._send(200, json.dumps(get_tabs(), ensure_ascii=False))
             else:
                 self._send(404, "not found")
 
@@ -353,6 +405,11 @@ def _api_handler():
                 self._send(200, json.dumps(res, ensure_ascii=False))
             elif self.path == "/api/choose_dir":
                 self._send(200, json.dumps({"path": choose_dir()}, ensure_ascii=False))
+            elif self.path == "/api/remove_tab":
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n) or b"{}")
+                res = remove_tab(payload.get("path", ""))
+                self._send(200, json.dumps(res, ensure_ascii=False))
             else:
                 self._send(404, "not found")
 
@@ -380,7 +437,7 @@ def run_browser(port=0):
 def main():
     global WORK_DIR
     cfg = get_config()
-    work_dir = cfg.get("work_dir", "")
+    work_dir = cfg.get("active_work_dir", "")
     if len(sys.argv) > 1:
         work_dir = sys.argv[1]
     if is_valid_work_dir(work_dir):

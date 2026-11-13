@@ -40,6 +40,26 @@
   }
   .ck{display:inline-flex; align-items:center; gap:5px; font-size:13px; color:var(--muted); white-space:nowrap; cursor:pointer; user-select:none;}
   .ck input{accent-color:var(--primary);}
+  .tab-bar{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .tab{
+    display:inline-flex; align-items:center; gap:6px; max-width:220px;
+    padding:5px 10px; border:1px solid var(--border); border-radius:6px;
+    cursor:pointer; font-size:13px; background:#fff; color:var(--text);
+    user-select:none; white-space:nowrap;
+  }
+  .tab .tab-name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .tab:hover{border-color:var(--primary);}
+  .tab.active{border-color:var(--primary); background:var(--hover); color:var(--primary); font-weight:600;}
+  .tab .tab-close{
+    border:none; background:none; cursor:pointer; color:var(--muted);
+    font-size:14px; line-height:1; padding:0 2px; border-radius:3px;
+  }
+  .tab .tab-close:hover{background:var(--danger); color:#fff;}
+  .tab-add{
+    border:1px dashed var(--border); border-radius:6px; padding:5px 10px;
+    cursor:pointer; font-size:14px; color:var(--muted); background:transparent; line-height:1;
+  }
+  .tab-add:hover{border-color:var(--primary); color:var(--primary);}
   .mode-group{display:flex; gap:8px; align-items:center;}
   .mode-group label{
     display:inline-flex; align-items:center; gap:5px; padding:6px 12px;
@@ -139,6 +159,7 @@
 </head>
 <body>
   <header>
+    <div class="tab-bar" id="tabBar"></div>
     <div class="header-row">
       <h1>配置表部分导出工具</h1>
       <div class="mode-group" id="modeGroup">
@@ -152,7 +173,7 @@
     <div class="bar">
       <span class="lbl">工作目录</span>
       <span class="work-dir" id="workDir" title="">未设置工作目录</span>
-      <button class="btn btn-ghost" id="btnSetWorkDir">切换工作目录…</button>
+      <button class="btn btn-ghost" id="btnSetWorkDir">添加页签…</button>
     </div>
     <div class="bar">
       <span class="lbl">项目路径</span>
@@ -259,6 +280,21 @@ const api = {
     const r = await fetch('/api/choose_dir', {method:'POST'});
     const j = await r.json();
     return j.path || '';
+  },
+  async getTabs(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.get_tabs();
+    const r = await fetch('/api/tabs');
+    return await r.json();
+  },
+  async removeTab(path){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.remove_tab(path);
+    const r = await fetch('/api/remove_tab', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path})
+    });
+    return await r.json();
   }
 };
 
@@ -269,6 +305,7 @@ let selLeft = new Set(); // 左侧选中
 let selRight = new Set();// 右侧选中
 let mode = 'c';
 let workDir = '';
+let tabs = [];          // 页签列表(工作目录路径)
 
 // ---------- 渲染 ----------
 function renderWorkDir(){
@@ -444,18 +481,79 @@ async function doMove(){
   }
 }
 
-async function switchWorkDir(){
+// ---------- 页签 ----------
+function esc(s){
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+function tabName(p){
+  const parts = (p || '').replace(/[\\/]+$/, '').split(/[\\/]/);
+  return parts[parts.length - 1] || p;
+}
+function renderTabs(){
+  const bar = $('tabBar');
+  bar.innerHTML = tabs.map(p=>{
+    const active = p === workDir;
+    return `<div class="tab${active?' active':''}" data-path="${esc(p)}" title="${esc(p)}">
+      <span class="tab-name">${esc(tabName(p))}</span>
+      <button class="tab-close" data-close="${esc(p)}" title="关闭页签">×</button>
+    </div>`;
+  }).join('') + '<button class="tab-add" id="btnAddTab" title="添加工作目录页签">+</button>';
+
+  bar.querySelectorAll('.tab').forEach(tab=>{
+    tab.addEventListener('click', ()=>{ switchTab(tab.dataset.path); });
+  });
+  bar.querySelectorAll('.tab-close').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      e.stopPropagation();
+      removeTab(btn.dataset.close);
+    });
+  });
+  const add = bar.querySelector('#btnAddTab');
+  if(add) add.addEventListener('click', addTab);
+}
+
+async function switchTab(path){
+  if(path === workDir) return;
+  const res = await api.setWorkDir(path);
+  if(res && res.ok){
+    workDir = path;
+    tabs = res.tabs || tabs;
+    renderWorkDir();
+    renderTabs();
+    rightSet = []; selLeft.clear(); selRight.clear();
+    await load();
+  } else {
+    log(res && res.log ? res.log : '切换页签失败', 'err');
+  }
+}
+
+async function addTab(){
   const p = await api.chooseDir();
   if(!p) return;
   const res = await api.setWorkDir(p);
   if(res && res.ok){
     workDir = p;
+    tabs = res.tabs || tabs;
     renderWorkDir();
+    renderTabs();
     rightSet = []; selLeft.clear(); selRight.clear();
     await load();
     log(res.log, 'ok');
   } else {
-    log(res && res.log ? res.log : '设置工作目录失败', 'err');
+    log(res && res.log ? res.log : '添加页签失败', 'err');
+  }
+}
+
+async function removeTab(path){
+  const res = await api.removeTab(path);
+  if(res && res.ok){
+    tabs = res.tabs || [];
+    workDir = res.active || '';
+    renderWorkDir();
+    renderTabs();
+    rightSet = []; selLeft.clear(); selRight.clear();
+    await load();
+    log(res.log, 'ok');
   }
 }
 
@@ -538,7 +636,7 @@ async function init(){
     const p = await api.chooseDir();
     if(p) $('projectPath').value = p;
   };
-  $('btnSetWorkDir').onclick = switchWorkDir;
+  $('btnSetWorkDir').onclick = addTab;
   $('btnClearLog').onclick = ()=> $('log').innerHTML='';
   $('btnRefresh').onclick = load;
   $('search').addEventListener('input', ()=>{ selLeft.clear(); renderLeft(); });
@@ -567,6 +665,13 @@ async function init(){
   try{
     workDir = await api.getWorkDir();
     renderWorkDir();
+  }catch(e){}
+
+  try{
+    const t = await api.getTabs();
+    tabs = (t && t.tabs) || [];
+    if(!tabs.length && workDir) tabs = [workDir];
+    renderTabs();
   }catch(e){}
 
   initDivider();
