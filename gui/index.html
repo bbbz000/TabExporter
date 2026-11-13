@@ -310,6 +310,27 @@ const api = {
       body: JSON.stringify({path})
     });
     return await r.json();
+  },
+  async checkUpdate(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.check_update();
+    const r = await fetch('/api/check_update', {method:'POST'});
+    return await r.json();
+  },
+  async downloadUpdate(url){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.download_update(url);
+    const r = await fetch('/api/download_update', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url})
+    });
+    return await r.json();
+  },
+  async applyUpdate(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.apply_update();
+    const r = await fetch('/api/apply_update', {method:'POST'});
+    return await r.json();
   }
 };
 
@@ -779,7 +800,28 @@ async function init(){
   });
 
   await load();
+  checkUpdatePrompt();
 }
+
+async function checkUpdatePrompt(){
+  try{
+    const info = await api.checkUpdate();
+    if(info && info.has_update){
+      const ok = confirm(`发现新版本 v${info.latest}（当前 v${info.current}），是否更新？\n\n更新将下载新版本并自动重启。`);
+      if(!ok) return;
+      log('开始下载更新...');
+      const dl = await api.downloadUpdate(info.download_url);
+      if(dl && dl.ok){
+        log(dl.log);
+        const ap = await api.applyUpdate();
+        log(ap.log);
+      } else {
+        log(dl ? dl.log : '下载失败', 'err');
+      }
+    }
+  }catch(e){}
+}
+
 async function load(){
   if(!workDir){ log('请先设置工作目录', 'err'); renderAll(); return; }
   try{

@@ -11,10 +11,12 @@
 import os
 import sys
 import json
+import re
 import subprocess
 import threading
 import webbrowser
 import shutil
+import urllib.request
 
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -27,6 +29,9 @@ def _data_dir():
 
 
 CONFIG_FILE = os.path.join(_data_dir(), "tool_config.json")
+
+VERSION = "1.0.0"
+GITHUB_REPO = "bbbz000/TabExporter"
 
 # 复用 export_tables.py 的纯逻辑函数
 sys.path.insert(0, TOOL_DIR)
@@ -328,6 +333,89 @@ def move_tables(names, project_path, move_cs=False):
     return {"ok": ok, "log": "\n".join(logs)}
 
 
+# ================= 更新检查 =================
+def _version_gt(a, b):
+    """比较版本号，a > b 返回 True。"""
+    def parse(v):
+        return [int(x) for x in re.findall(r'\d+', str(v))]
+    try:
+        return parse(a) > parse(b)
+    except Exception:
+        return False
+
+
+def check_update():
+    """检查 GitHub 最新版本。返回 {latest, current, has_update, url, download_url}。"""
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+            headers={"User-Agent": "TabExporter"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        latest = (data.get("tag_name") or "").lstrip("v")
+        download_url = None
+        for asset in data.get("assets", []):
+            if (asset.get("name") or "").lower().endswith(".exe"):
+                download_url = asset.get("browser_download_url")
+                break
+        return {
+            "latest": latest,
+            "current": VERSION,
+            "has_update": _version_gt(latest, VERSION),
+            "url": data.get("html_url", ""),
+            "download_url": download_url,
+        }
+    except Exception as e:
+        return {"latest": "", "current": VERSION, "has_update": False,
+                "url": "", "download_url": None, "error": str(e)}
+
+
+def download_update(download_url):
+    """下载新 exe 到 .new 文件。返回 {ok, log}。"""
+    if not download_url:
+        return {"ok": False, "log": "无下载地址"}
+    new_path = os.path.join(_data_dir(), "ExportTables.exe.new")
+    try:
+        req = urllib.request.Request(download_url, headers={"User-Agent": "TabExporter"})
+        with urllib.request.urlopen(req, timeout=300) as r, open(new_path, "wb") as f:
+            shutil.copyfileobj(r, f)
+        return {"ok": True, "log": f"已下载: {new_path}"}
+    except Exception as e:
+        return {"ok": False, "log": f"下载失败: {e}"}
+
+
+def apply_update():
+    """写 update.bat 并执行：替换 exe 并重启。仅 exe(frozen) 模式有效。"""
+    if not getattr(sys, 'frozen', False):
+        return {"ok": False, "log": "源码模式不支持自动更新，请用打包的 exe"}
+    try:
+        exe_dir = _data_dir()
+        exe_path = sys.executable
+        new_path = os.path.join(exe_dir, "ExportTables.exe.new")
+        bat_path = os.path.join(exe_dir, "update.bat")
+        if not os.path.exists(new_path):
+            return {"ok": False, "log": "未找到已下载的更新文件"}
+
+        exe_name = os.path.basename(exe_path)
+        bat = (
+            "@echo off\r\n"
+            "ping 127.0.0.1 -n 2 >nul\r\n"
+            f'del "{exe_path}"\r\n'
+            f'ren "{new_path}" "{exe_name}"\r\n'
+            f'start "" "{exe_path}"\r\n'
+            'del "%~f0"\r\n'
+        )
+        with open(bat_path, "w", encoding="utf-8") as f:
+            f.write(bat)
+        subprocess.Popen(["cmd", "/c", bat_path], cwd=exe_dir, close_fds=True)
+        # 延迟退出，让前端有时间显示日志
+        threading.Timer(1.0, lambda: os._exit(0)).start()
+        return {"ok": True, "log": "更新已启动，工具即将重启"}
+    except Exception as e:
+        return {"ok": False, "log": f"应用更新失败: {e}"}
+
+
 # ================= 运行壳 =================
 HTML_PATH = resource_path(os.path.join("gui", "index.html"))
 
@@ -362,6 +450,15 @@ def run_webview():
 
         def choose_dir(self):
             return choose_dir()
+
+        def check_update(self):
+            return check_update()
+
+        def download_update(self, url):
+            return download_update(url)
+
+        def apply_update(self):
+            return apply_update()
 
     webview.create_window("配置表部分导出工具", HTML_PATH,
                           js_api=Api(), width=1180, height=780,
@@ -419,6 +516,15 @@ def _api_handler():
                 payload = json.loads(self.rfile.read(n) or b"{}")
                 res = remove_tab(payload.get("path", ""))
                 self._send(200, json.dumps(res, ensure_ascii=False))
+            elif self.path == "/api/check_update":
+                self._send(200, json.dumps(check_update(), ensure_ascii=False))
+            elif self.path == "/api/download_update":
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n) or b"{}")
+                res = download_update(payload.get("url", ""))
+                self._send(200, json.dumps(res, ensure_ascii=False))
+            elif self.path == "/api/apply_update":
+                self._send(200, json.dumps(apply_update(), ensure_ascii=False))
             else:
                 self._send(404, "not found")
 
