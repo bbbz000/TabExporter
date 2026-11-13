@@ -30,7 +30,7 @@ def _data_dir():
 
 CONFIG_FILE = os.path.join(_data_dir(), "tool_config.json")
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 GITHUB_REPO = "bbbz000/TabExporter"
 
 # 复用 export_tables.py 的纯逻辑函数
@@ -470,7 +470,7 @@ def run_webview():
         def apply_update(self):
             return apply_update()
 
-    webview.create_window("配置表部分导出工具", HTML_PATH,
+    webview.create_window(f"配置表部分导出工具 v{VERSION}", HTML_PATH,
                           js_api=Api(), width=1180, height=780,
                           min_size=(900, 580))
     webview.start()

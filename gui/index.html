@@ -23,8 +23,6 @@
     padding:12px 16px; background:var(--panel); border-bottom:1px solid var(--border);
   }
   .header-row{display:flex; align-items:center; gap:14px; flex-wrap:wrap;}
-  header h1{font-size:16px; font-weight:600; margin-right:auto; white-space:nowrap;}
-  .version{font-size:12px; font-weight:400; color:var(--muted); margin-left:4px;}
   .bar{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
   .bar .lbl{font-size:13px; color:var(--muted); white-space:nowrap;}
   .bar input{
@@ -39,7 +37,7 @@
     font-family:Consolas,"Cascadia Mono",monospace;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
-  .ck{display:inline-flex; align-items:center; gap:5px; font-size:13px; color:var(--muted); white-space:nowrap; cursor:pointer; user-select:none;}
+  .ck{display:inline-flex; align-items:center; gap:3px; font-size:13px; color:var(--muted); white-space:nowrap; cursor:pointer; user-select:none;}
   .ck input{accent-color:var(--primary);}
   .tab-bar{
     display:flex; align-items:flex-end; gap:4px;
@@ -72,7 +70,7 @@
     line-height:1; border-radius:6px;
   }
   .tab-add:hover{background:var(--hover); color:var(--primary);}
-  .mode-group{display:flex; gap:8px; align-items:center;}
+  .mode-group{display:flex; gap:8px; align-items:center; margin-right:auto;}
   .mode-group label{
     display:inline-flex; align-items:center; gap:5px; padding:6px 12px;
     border:1px solid var(--border); border-radius:6px; cursor:pointer;
@@ -176,7 +174,6 @@
   <header>
     <div class="tab-bar" id="tabBar"></div>
     <div class="header-row">
-      <h1>配置表部分导出工具 <span class="version" id="versionLabel"></span></h1>
       <div class="mode-group" id="modeGroup">
         <label data-mode="cs"><input type="radio" name="mode" value="cs">两端</label>
         <label data-mode="c"><input type="radio" name="mode" value="c" checked>仅客户端</label>
@@ -770,7 +767,7 @@ async function init(){
 
   try{
     const v = await api.getVersion();
-    if(v) $('versionLabel').textContent = 'v' + v;
+    if(v) document.title = '配置表部分导出工具 v' + v;
   }catch(e){}
 
   try{
