@@ -124,8 +124,8 @@
     <div class="header-row">
       <h1>配置表部分导出工具</h1>
       <div class="mode-group" id="modeGroup">
-        <label data-mode="cs"><input type="radio" name="mode" value="cs" checked>两端</label>
-        <label data-mode="c"><input type="radio" name="mode" value="c">仅客户端</label>
+        <label data-mode="cs"><input type="radio" name="mode" value="cs">两端</label>
+        <label data-mode="c"><input type="radio" name="mode" value="c" checked>仅客户端</label>
         <label data-mode="s"><input type="radio" name="mode" value="s">仅服务端</label>
       </div>
       <button class="btn btn-ghost" id="btnRefresh">刷新列表</button>
@@ -245,7 +245,7 @@ let allTables = [];      // 左列表全部
 let rightSet = [];       // 右侧待导出(有序, 存表名)
 let selLeft = new Set(); // 左侧选中
 let selRight = new Set();// 右侧选中
-let mode = 'cs';
+let mode = 'c';
 let workDir = '';
 
 // ---------- 渲染 ----------
@@ -440,7 +440,7 @@ async function init(){
         l.classList.toggle('on', l.dataset.mode===mode));
     });
   });
-  document.querySelector('#modeGroup label[data-mode="cs"]').classList.add('on');
+  document.querySelector('#modeGroup label[data-mode="c"]').classList.add('on');
 
   bindList($('leftList'), selLeft, n=>{
     if(!rightSet.includes(n)){ rightSet.push(n); renderAll(); }

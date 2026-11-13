@@ -158,7 +158,7 @@ const api = {
 let allTables = [];   // 左列表全部（含搜索过滤前的原始数据）
 let rightSet  = [];   // 右侧待导出表名（有序）
 let selLeft / selRight = new Set();  // 两侧选中项
-let mode = 'cs';      // 导出模式
+let mode = 'c';       // 导出模式（默认仅客户端）
 let workDir = '';     // 工作目录
 ```
 
