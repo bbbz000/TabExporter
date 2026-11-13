@@ -17,7 +17,16 @@ import webbrowser
 import shutil
 
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(TOOL_DIR, "tool_config.json")
+
+
+def _data_dir():
+    """持久数据目录：打包成 exe 后用 exe 所在目录(避免 _MEIPASS 临时目录丢失)，源码模式用脚本目录。"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return TOOL_DIR
+
+
+CONFIG_FILE = os.path.join(_data_dir(), "tool_config.json")
 
 # 复用 export_tables.py 的纯逻辑函数
 sys.path.insert(0, TOOL_DIR)
@@ -444,6 +453,11 @@ def main():
         set_work_dir(work_dir)
     # 否则 WORK_DIR 保持空，界面显示"未设置工作目录"，由用户切换
 
+    # run.bat 通过 TABEXPORTER_NO_WEBVIEW=1 强制浏览器(源码模式用系统 Python 3.14 + pywebview 6.x 有 bug)；
+    # exe 默认用 pywebview 独立窗口(内置 Python 3.12 + pywebview 5.4)。
+    if os.environ.get('TABEXPORTER_NO_WEBVIEW') == '1':
+        run_browser()
+        return
     try:
         import webview  # noqa: F401
         run_webview()
