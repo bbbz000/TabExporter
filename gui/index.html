@@ -62,8 +62,17 @@
     flex:1; display:flex; gap:12px; padding:12px 16px; min-height:0;
   }
   .col{display:flex; flex-direction:column; background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:hidden;}
-  .col-left{flex:1 1 45%; min-width:0;}
-  .col-right{flex:1 1 45%; min-width:0;}
+  .col-left{flex:0 0 44%; min-width:200px;}
+  .col-right{flex:1 1 auto; min-width:200px;}
+  .divider{
+    flex:0 0 7px; cursor:col-resize;
+    display:flex; align-items:stretch;
+  }
+  .divider::before{
+    content:''; flex:1; margin:0 3px; border-radius:2px;
+    background:var(--border); transition:background .15s;
+  }
+  .divider:hover::before{background:var(--primary);}
   .col-mid{flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; gap:10px; padding:0 4px;}
   .col-head{
     display:flex; align-items:center; gap:8px; padding:10px 12px;
@@ -101,9 +110,18 @@
   .arrow:disabled{opacity:.35; cursor:not-allowed;}
   .empty{color:var(--muted); text-align:center; padding:24px 8px; font-size:13px;}
   footer{
-    height:190px; margin:0 16px 12px; background:#0f172a; border-radius:8px;
+    flex:0 0 190px; margin:0 16px 12px; background:#0f172a; border-radius:8px;
     display:flex; flex-direction:column; overflow:hidden;
   }
+  .divider-h{
+    flex:0 0 7px; cursor:row-resize; margin:0 16px;
+    display:flex; align-items:center;
+  }
+  .divider-h::before{
+    content:''; flex:1; height:2px; border-radius:2px;
+    background:var(--border); transition:background .15s;
+  }
+  .divider-h:hover::before{background:var(--primary);}
   .log-head{
     display:flex; align-items:center; gap:8px; padding:6px 12px;
     color:#cbd5e1; font-size:12px; border-bottom:1px solid #1e293b;
@@ -145,8 +163,8 @@
     </div>
   </header>
 
-  <main>
-    <div class="col col-left">
+  <main id="mainArea">
+    <div class="col col-left" id="leftCol">
       <div class="col-head">
         <span class="title">全部配置表</span>
         <span class="count" id="leftCount">0</span>
@@ -154,6 +172,8 @@
       </div>
       <div class="list" id="leftList"></div>
     </div>
+
+    <div class="divider" id="divider" title="拖动调整左右宽度"></div>
 
     <div class="col-mid">
       <button class="arrow" id="btnAdd" title="添加选中到右侧">➜</button>
@@ -172,7 +192,9 @@
     </div>
   </main>
 
-  <footer>
+  <div class="divider-h" id="dividerH" title="拖动调整日志栏高度"></div>
+
+  <footer id="logPanel">
     <div class="log-head">
       <span>导出日志</span>
       <button id="btnClearLog">清空</button>
@@ -306,18 +328,39 @@ function log(msg, cls){
 
 // ---------- 交互 ----------
 function bindList(listEl, selSet, onDblClick){
+  let anchor = null; // 范围选择的锚点(上次单选/Ctrl点击的位置)
+
   listEl.addEventListener('click', e=>{
     const item = e.target.closest('.item');
     if(!item) return;
     const name = item.dataset.name;
-    if(e.ctrlKey || e.metaKey){
+
+    if(e.shiftKey && anchor){
+      // Shift+点击：选中 anchor 到当前项之间的连续范围
+      const items = [...listEl.querySelectorAll('.item')];
+      const ia = items.findIndex(el => el.dataset.name === anchor);
+      const ib = items.findIndex(el => el.dataset.name === name);
+      if(ia !== -1 && ib !== -1){
+        const from = Math.min(ia, ib), to = Math.max(ia, ib);
+        selSet.clear();
+        items.forEach(el => el.classList.remove('selected'));
+        for(let i = from; i <= to; i++){
+          selSet.add(items[i].dataset.name);
+          items[i].classList.add('selected');
+        }
+      }
+    } else if(e.ctrlKey || e.metaKey){
+      // Ctrl+点击：切换单个选中
       if(selSet.has(name)){ selSet.delete(name); item.classList.remove('selected'); }
       else { selSet.add(name); item.classList.add('selected'); }
+      anchor = name;
     } else {
+      // 普通点击：单选
       listEl.querySelectorAll('.item.selected').forEach(x=>x.classList.remove('selected'));
       selSet.clear();
       selSet.add(name);
       item.classList.add('selected');
+      anchor = name;
     }
   });
   listEl.addEventListener('dblclick', e=>{
@@ -416,6 +459,73 @@ async function switchWorkDir(){
   }
 }
 
+// ---------- 分栏拖动 ----------
+function initDivider(){
+  const main = $('mainArea'), left = $('leftCol'), dv = $('divider');
+  let dragging = false;
+
+  function setLeftPct(pct){
+    pct = Math.max(20, Math.min(65, pct));
+    left.style.flex = '0 0 ' + pct + '%';
+    try{ localStorage.setItem('leftPct', pct); }catch(e){}
+  }
+
+  dv.addEventListener('mousedown', e=>{
+    dragging = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e=>{
+    if(!dragging) return;
+    const r = main.getBoundingClientRect();
+    const pad = 16; // main 左右 padding
+    const innerW = r.width - pad * 2;
+    const pct = (e.clientX - r.left - pad) / innerW * 100;
+    setLeftPct(pct);
+  });
+  document.addEventListener('mouseup', ()=>{
+    dragging = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+
+  const saved = parseFloat(localStorage.getItem('leftPct'));
+  if(saved) setLeftPct(saved);
+}
+
+// ---------- 日志栏拖动 ----------
+function initDividerH(){
+  const foot = $('logPanel'), dv = $('dividerH');
+  let dragging = false;
+
+  function setFooterH(h){
+    h = Math.max(80, Math.min(500, h));
+    foot.style.flex = '0 0 ' + h + 'px';
+    try{ localStorage.setItem('footerH', h); }catch(e){}
+  }
+
+  dv.addEventListener('mousedown', e=>{
+    dragging = true;
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e=>{
+    if(!dragging) return;
+    const h = window.innerHeight - e.clientY - 12;
+    setFooterH(h);
+  });
+  document.addEventListener('mouseup', ()=>{
+    dragging = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+
+  const saved = parseFloat(localStorage.getItem('footerH'));
+  if(saved) setFooterH(saved);
+}
+
 // ---------- 初始化 ----------
 async function init(){
   $('btnAdd').onclick = addSelected;
@@ -458,6 +568,30 @@ async function init(){
     workDir = await api.getWorkDir();
     renderWorkDir();
   }catch(e){}
+
+  initDivider();
+  initDividerH();
+
+  // 空格键 = 对当前选中项执行双击"移动"操作（左侧选中→添加，右侧选中→移除）
+  document.addEventListener('keydown', e=>{
+    if(e.code !== 'Space') return;
+    const t = e.target;
+    const tag = t && t.tagName;
+    if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
+    if(selRight.size){
+      e.preventDefault();
+      const names = [...selRight];
+      rightSet = rightSet.filter(n => !names.includes(n));
+      selRight.clear();
+      renderAll();
+    } else if(selLeft.size){
+      e.preventDefault();
+      const names = [...selLeft];
+      names.forEach(n=>{ if(!rightSet.includes(n)) rightSet.push(n); });
+      selLeft.clear();
+      renderAll();
+    }
+  });
 
   await load();
 }
