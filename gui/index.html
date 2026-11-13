@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>配置表部分导出工具</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#ffffff; --border:#d8dee6; --text:#1f2933;
+    --primary:#2563eb; --primary-h:#1d4ed8; --accent:#10b981; --danger:#ef4444;
+    --tag-client:#2563eb; --tag-server:#16a34a; --tag-both:#9aa5b1;
+    --muted:#6b7280; --hover:#eef4ff; --sel:#dbeafe;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    background:var(--bg); color:var(--text); font-size:14px;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  header{
+    display:flex; flex-direction:column; gap:10px;
+    padding:12px 16px; background:var(--panel); border-bottom:1px solid var(--border);
+  }
+  .header-row{display:flex; align-items:center; gap:14px; flex-wrap:wrap;}
+  header h1{font-size:16px; font-weight:600; margin-right:auto; white-space:nowrap;}
+  .bar{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .bar .lbl{font-size:13px; color:var(--muted); white-space:nowrap;}
+  .bar input{
+    flex:1; min-width:220px; padding:7px 10px; border:1px solid var(--border);
+    border-radius:6px; font-size:13px; outline:none;
+    font-family:Consolas,"Cascadia Mono",monospace;
+  }
+  .bar input:focus{border-color:var(--primary);}
+  .work-dir{
+    flex:1; min-width:220px; padding:7px 10px; background:#eef2f8;
+    border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--muted);
+    font-family:Consolas,"Cascadia Mono",monospace;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .ck{display:inline-flex; align-items:center; gap:5px; font-size:13px; color:var(--muted); white-space:nowrap; cursor:pointer; user-select:none;}
+  .ck input{accent-color:var(--primary);}
+  .mode-group{display:flex; gap:8px; align-items:center;}
+  .mode-group label{
+    display:inline-flex; align-items:center; gap:5px; padding:6px 12px;
+    border:1px solid var(--border); border-radius:6px; cursor:pointer;
+    background:#fff; user-select:none; transition:.15s;
+  }
+  .mode-group label:hover{border-color:var(--primary);}
+  .mode-group input{accent-color:var(--primary);}
+  .mode-group label.on{border-color:var(--primary); background:var(--hover);}
+  .btn{
+    border:none; border-radius:6px; padding:8px 16px; cursor:pointer;
+    font-size:14px; font-weight:500; transition:.15s; white-space:nowrap;
+  }
+  .btn-primary{background:var(--primary); color:#fff;}
+  .btn-primary:hover{background:var(--primary-h);}
+  .btn-primary:disabled{background:#b6c4e0; cursor:not-allowed;}
+  .btn-ghost{background:#fff; border:1px solid var(--border); color:var(--text);}
+  .btn-ghost:hover{border-color:var(--primary); color:var(--primary);}
+  main{
+    flex:1; display:flex; gap:12px; padding:12px 16px; min-height:0;
+  }
+  .col{display:flex; flex-direction:column; background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:hidden;}
+  .col-left{flex:1 1 45%; min-width:0;}
+  .col-right{flex:1 1 45%; min-width:0;}
+  .col-mid{flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; gap:10px; padding:0 4px;}
+  .col-head{
+    display:flex; align-items:center; gap:8px; padding:10px 12px;
+    border-bottom:1px solid var(--border); background:#fafbfc;
+  }
+  .col-head .title{font-weight:600; white-space:nowrap;}
+  .col-head .count{color:var(--muted); font-size:12px; background:#eef1f5; border-radius:10px; padding:2px 8px;}
+  .search{flex:1; min-width:80px;}
+  .search input{
+    width:100%; padding:6px 10px; border:1px solid var(--border); border-radius:6px;
+    font-size:13px; outline:none;
+  }
+  .search input:focus{border-color:var(--primary);}
+  .list{flex:1; overflow-y:auto; padding:6px;}
+  .item{
+    display:flex; align-items:center; gap:8px; padding:6px 8px;
+    border-radius:6px; cursor:pointer; user-select:none; border:1px solid transparent;
+  }
+  .item:hover{background:var(--hover);}
+  .item.selected{background:var(--sel); border-color:var(--primary);}
+  .item .name{font-family:Consolas,"Cascadia Mono",monospace; font-size:13px; white-space:nowrap;}
+  .item .desc{color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .tag{
+    font-size:10px; font-weight:600; padding:1px 6px; border-radius:8px;
+    color:#fff; flex:0 0 auto; letter-spacing:.3px;
+  }
+  .tag.client{background:var(--tag-client);}
+  .tag.server{background:var(--tag-server);}
+  .tag.both{background:var(--tag-both);}
+  .arrow{
+    width:36px; height:36px; border-radius:8px; border:1px solid var(--border);
+    background:#fff; cursor:pointer; font-size:16px; color:var(--muted); transition:.15s;
+  }
+  .arrow:hover{border-color:var(--primary); color:var(--primary); background:var(--hover);}
+  .arrow:disabled{opacity:.35; cursor:not-allowed;}
+  .empty{color:var(--muted); text-align:center; padding:24px 8px; font-size:13px;}
+  footer{
+    height:190px; margin:0 16px 12px; background:#0f172a; border-radius:8px;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  .log-head{
+    display:flex; align-items:center; gap:8px; padding:6px 12px;
+    color:#cbd5e1; font-size:12px; border-bottom:1px solid #1e293b;
+  }
+  .log-head button{margin-left:auto; background:#1e293b; color:#cbd5e1; border:none; border-radius:4px; padding:3px 10px; cursor:pointer; font-size:12px;}
+  .log-head button:hover{background:#334155;}
+  #log{
+    flex:1; overflow-y:auto; padding:8px 12px; color:#a5f3fc;
+    font-family:Consolas,"Cascadia Mono",monospace; font-size:12px; line-height:1.5; white-space:pre-wrap;
+  }
+  .log-line.time{color:#64748b;}
+  .log-line.ok{color:#4ade80;}
+  .log-line.err{color:#f87171;}
+</style>
+</head>
+<body>
+  <header>
+    <div class="header-row">
+      <h1>配置表部分导出工具</h1>
+      <div class="mode-group" id="modeGroup">
+        <label data-mode="cs"><input type="radio" name="mode" value="cs" checked>两端</label>
+        <label data-mode="c"><input type="radio" name="mode" value="c">仅客户端</label>
+        <label data-mode="s"><input type="radio" name="mode" value="s">仅服务端</label>
+      </div>
+      <button class="btn btn-ghost" id="btnRefresh">刷新列表</button>
+      <button class="btn btn-primary" id="btnExport">开始导出</button>
+    </div>
+    <div class="bar">
+      <span class="lbl">工作目录</span>
+      <span class="work-dir" id="workDir" title="">未设置工作目录</span>
+      <button class="btn btn-ghost" id="btnSetWorkDir">切换工作目录…</button>
+    </div>
+    <div class="bar">
+      <span class="lbl">项目路径</span>
+      <input id="projectPath" type="text" placeholder="客户端项目根目录，如 C:\workspace\LDLProject\ldl-client" spellcheck="false">
+      <button class="btn btn-ghost" id="btnBrowse">浏览…</button>
+      <label class="ck"><input type="checkbox" id="chkMoveCs">移动 config.cs</label>
+      <button class="btn btn-primary" id="btnMove">移动</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="col col-left">
+      <div class="col-head">
+        <span class="title">全部配置表</span>
+        <span class="count" id="leftCount">0</span>
+        <div class="search"><input id="search" type="text" placeholder="搜索表名 / 描述…"></div>
+      </div>
+      <div class="list" id="leftList"></div>
+    </div>
+
+    <div class="col-mid">
+      <button class="arrow" id="btnAdd" title="添加选中到右侧">➜</button>
+      <button class="arrow" id="btnAddAll" title="添加全部(当前筛选)">⏩</button>
+      <button class="arrow" id="btnRemove" title="从右侧移除选中">⏪</button>
+      <button class="arrow" id="btnClear" title="清空右侧">✖</button>
+    </div>
+
+    <div class="col col-right">
+      <div class="col-head">
+        <span class="title">待导出表</span>
+        <span class="count" id="rightCount">0</span>
+        <span class="search" style="visibility:hidden"><input type="text" disabled></span>
+      </div>
+      <div class="list" id="rightList"><div class="empty">点击左侧表名添加到这里</div></div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="log-head">
+      <span>导出日志</span>
+      <button id="btnClearLog">清空</button>
+    </div>
+    <div id="log"></div>
+  </footer>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// ---------- 统一 API 层：pywebview 或 http ----------
+const api = {
+  async listTables(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.list_tables();
+    const r = await fetch('/api/list');
+    return await r.json();
+  },
+  async exportTables(names, mode){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.export_tables(names, mode);
+    const r = await fetch('/api/export', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({names, mode})
+    });
+    return await r.json();
+  },
+  async moveTables(names, projectPath, moveCs){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.move_tables(names, projectPath, moveCs);
+    const r = await fetch('/api/move', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({names, project_path: projectPath, move_cs: moveCs})
+    });
+    return await r.json();
+  },
+  async getConfig(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.get_config();
+    const r = await fetch('/api/config');
+    return await r.json();
+  },
+  async getWorkDir(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.get_work_dir();
+    const r = await fetch('/api/work_dir');
+    const j = await r.json();
+    return j.work_dir || '';
+  },
+  async setWorkDir(path){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.set_work_dir(path);
+    const r = await fetch('/api/set_work_dir', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path})
+    });
+    return await r.json();
+  },
+  async chooseDir(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.choose_dir() || '';
+    const r = await fetch('/api/choose_dir', {method:'POST'});
+    const j = await r.json();
+    return j.path || '';
+  }
+};
+
+// ---------- 状态 ----------
+let allTables = [];      // 左列表全部
+let rightSet = [];       // 右侧待导出(有序, 存表名)
+let selLeft = new Set(); // 左侧选中
+let selRight = new Set();// 右侧选中
+let mode = 'cs';
+let workDir = '';
+
+// ---------- 渲染 ----------
+function renderWorkDir(){
+  const el = $('workDir');
+  if(workDir){ el.textContent = workDir; el.title = workDir; }
+  else { el.textContent = '未设置工作目录（点右侧按钮选择配置表目录）'; el.title = ''; }
+}
+function tagBadge(tag){
+  const cls = tag==='client' ? 'client' : (tag==='server' ? 'server' : 'both');
+  const txt = tag==='client' ? 'C' : (tag==='server' ? 'S' : '两端');
+  return `<span class="tag ${cls}">${txt}</span>`;
+}
+function itemHtml(t){
+  return `<div class="item" data-name="${t.name}" data-tag="${t.tag||''}">
+    ${tagBadge(t.tag)}<span class="name">${t.name}</span><span class="desc">${t.desc||''}</span>
+  </div>`;
+}
+function renderLeft(){
+  const kw = $('search').value.trim().toLowerCase();
+  const list = $('leftList');
+  let shown = allTables.filter(t =>
+    !kw || t.name.toLowerCase().includes(kw) || (t.desc||'').toLowerCase().includes(kw));
+  list.innerHTML = shown.length ? shown.map(itemHtml).join('') : '<div class="empty">无匹配结果</div>';
+  $('leftCount').textContent = shown.length + ' / ' + allTables.length;
+  list.querySelectorAll('.item').forEach(el=>{
+    if(selLeft.has(el.dataset.name)) el.classList.add('selected');
+  });
+}
+function renderRight(){
+  const list = $('rightList');
+  if(!rightSet.length){
+    list.innerHTML = '<div class="empty">点击左侧表名添加到这里</div>';
+  } else {
+    const map = Object.fromEntries(allTables.map(t=>[t.name,t]));
+    list.innerHTML = rightSet.map(n=>{
+      const t = map[n] || {name:n, tag:'', desc:''};
+      return itemHtml(t);
+    }).join('');
+    list.querySelectorAll('.item').forEach(el=>{
+      if(selRight.has(el.dataset.name)) el.classList.add('selected');
+    });
+  }
+  $('rightCount').textContent = rightSet.length;
+}
+function renderAll(){ renderLeft(); renderRight(); }
+
+// ---------- 日志 ----------
+function log(msg, cls){
+  const el = $('log');
+  const div = document.createElement('div');
+  div.className = 'log-line' + (cls ? ' '+cls : '');
+  const t = new Date().toTimeString().slice(0,8);
+  div.textContent = `[${t}] ${msg}`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ---------- 交互 ----------
+function bindList(listEl, selSet, onDblClick){
+  listEl.addEventListener('click', e=>{
+    const item = e.target.closest('.item');
+    if(!item) return;
+    const name = item.dataset.name;
+    if(e.ctrlKey || e.metaKey){
+      if(selSet.has(name)){ selSet.delete(name); item.classList.remove('selected'); }
+      else { selSet.add(name); item.classList.add('selected'); }
+    } else {
+      listEl.querySelectorAll('.item.selected').forEach(x=>x.classList.remove('selected'));
+      selSet.clear();
+      selSet.add(name);
+      item.classList.add('selected');
+    }
+  });
+  listEl.addEventListener('dblclick', e=>{
+    const item = e.target.closest('.item');
+    if(item) onDblClick(item.dataset.name);
+  });
+}
+
+function addSelected(){
+  const names = selLeft.size ? [...selLeft] : [];
+  if(!names.length){
+    const first = $('leftList').querySelector('.item');
+    if(first) names.push(first.dataset.name);
+    else return;
+  }
+  names.forEach(n=>{ if(!rightSet.includes(n)) rightSet.push(n); });
+  selLeft.clear();
+  renderAll();
+}
+function addAllFiltered(){
+  const kw = $('search').value.trim().toLowerCase();
+  const shown = allTables.filter(t =>
+    !kw || t.name.toLowerCase().includes(kw) || (t.desc||'').toLowerCase().includes(kw));
+  shown.forEach(t=>{ if(!rightSet.includes(t.name)) rightSet.push(t.name); });
+  selLeft.clear();
+  renderAll();
+}
+function removeSelected(){
+  const names = selRight.size ? [...selRight] : [];
+  if(!names.length){
+    const first = $('rightList').querySelector('.item');
+    if(first) names.push(first.dataset.name);
+    else return;
+  }
+  rightSet = rightSet.filter(n => !names.includes(n));
+  selRight.clear();
+  renderAll();
+}
+function clearRight(){ rightSet = []; selRight.clear(); renderAll(); }
+
+// ---------- 导出 ----------
+async function doExport(){
+  if(!workDir){ log('请先设置工作目录', 'err'); return; }
+  if(!rightSet.length){ log('待导出列表为空', 'err'); return; }
+  const btn = $('btnExport');
+  btn.disabled = true;
+  log(`开始导出 ${rightSet.length} 张表 (${mode==='c'?'客户端':mode==='s'?'服务端':'两端'})...`);
+  try{
+    const res = await api.exportTables([...rightSet], mode);
+    if(res && res.log){
+      res.log.split(/\r?\n/).forEach(l=>{ if(l.trim()) log(l, res.ok ? '' : 'err'); });
+    }
+    if(res && res.ok) log('✅ 导出完成', 'ok');
+    else log('❌ 导出失败', 'err');
+  }catch(e){
+    log('导出异常: ' + e, 'err');
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+async function doMove(){
+  if(!workDir){ log('请先设置工作目录', 'err'); return; }
+  const p = $('projectPath').value.trim();
+  if(!p){ log('请先设置项目路径', 'err'); return; }
+  if(!rightSet.length){ log('待导出列表为空', 'err'); return; }
+  const btn = $('btnMove');
+  btn.disabled = true;
+  log(`开始移动 ${rightSet.length} 张表到客户端...`);
+  try{
+    const res = await api.moveTables([...rightSet], p, $('chkMoveCs').checked);
+    if(res && res.log){
+      res.log.split(/\r?\n/).forEach(l=>{ if(l.trim()) log(l, res.ok ? '' : 'err'); });
+    }
+    if(res && res.ok) log('✅ 移动完成', 'ok');
+    else log('❌ 移动失败', 'err');
+  }catch(e){
+    log('移动异常: ' + e, 'err');
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+async function switchWorkDir(){
+  const p = await api.chooseDir();
+  if(!p) return;
+  const res = await api.setWorkDir(p);
+  if(res && res.ok){
+    workDir = p;
+    renderWorkDir();
+    rightSet = []; selLeft.clear(); selRight.clear();
+    await load();
+    log(res.log, 'ok');
+  } else {
+    log(res && res.log ? res.log : '设置工作目录失败', 'err');
+  }
+}
+
+// ---------- 初始化 ----------
+async function init(){
+  $('btnAdd').onclick = addSelected;
+  $('btnAddAll').onclick = addAllFiltered;
+  $('btnRemove').onclick = removeSelected;
+  $('btnClear').onclick = clearRight;
+  $('btnExport').onclick = doExport;
+  $('btnMove').onclick = doMove;
+  $('btnBrowse').onclick = async ()=>{
+    const p = await api.chooseDir();
+    if(p) $('projectPath').value = p;
+  };
+  $('btnSetWorkDir').onclick = switchWorkDir;
+  $('btnClearLog').onclick = ()=> $('log').innerHTML='';
+  $('btnRefresh').onclick = load;
+  $('search').addEventListener('input', ()=>{ selLeft.clear(); renderLeft(); });
+
+  document.querySelectorAll('#modeGroup input').forEach(r=>{
+    r.addEventListener('change', ()=>{
+      mode = r.value;
+      document.querySelectorAll('#modeGroup label').forEach(l=>
+        l.classList.toggle('on', l.dataset.mode===mode));
+    });
+  });
+  document.querySelector('#modeGroup label[data-mode="cs"]').classList.add('on');
+
+  bindList($('leftList'), selLeft, n=>{
+    if(!rightSet.includes(n)){ rightSet.push(n); renderAll(); }
+  });
+  bindList($('rightList'), selRight, n=>{
+    rightSet = rightSet.filter(x=>x!==n); selRight.delete(n); renderAll();
+  });
+
+  try{
+    const cfg = await api.getConfig();
+    if(cfg && cfg.project_path) $('projectPath').value = cfg.project_path;
+  }catch(e){}
+
+  try{
+    workDir = await api.getWorkDir();
+    renderWorkDir();
+  }catch(e){}
+
+  await load();
+}
+async function load(){
+  if(!workDir){ log('请先设置工作目录', 'err'); renderAll(); return; }
+  try{
+    log('加载配置表列表...');
+    const res = await api.listTables();
+    const arr = Array.isArray(res) ? res : (res.tables || []);
+    allTables = arr;
+    renderAll();
+    log(`已加载 ${allTables.length} 张配置表`);
+  }catch(e){
+    log('加载列表失败: ' + e, 'err');
+  }
+}
+init();
+</script>
+</body>
+</html>

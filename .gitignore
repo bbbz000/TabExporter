@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# PyInstaller 构建产物
+build/
+dist/
+*.spec
+
+# 本地配置(含本机绝对路径，不要提交)
+tool_config.json
+
+# tabtoy 在工作目录生成的临时索引
+_temp_index.xlsx
+
+# 说明: tabtoy.exe 是第三方工具(davyxu/tabtoy)。
+# 如需让仓库更小，可取消下面注释将其忽略，并在 README 说明如何获取:
+# tabtoy.exe
