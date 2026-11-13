@@ -24,6 +24,7 @@
   }
   .header-row{display:flex; align-items:center; gap:14px; flex-wrap:wrap;}
   header h1{font-size:16px; font-weight:600; margin-right:auto; white-space:nowrap;}
+  .version{font-size:12px; font-weight:400; color:var(--muted); margin-left:4px;}
   .bar{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
   .bar .lbl{font-size:13px; color:var(--muted); white-space:nowrap;}
   .bar input{
@@ -175,7 +176,7 @@
   <header>
     <div class="tab-bar" id="tabBar"></div>
     <div class="header-row">
-      <h1>配置表部分导出工具</h1>
+      <h1>配置表部分导出工具 <span class="version" id="versionLabel"></span></h1>
       <div class="mode-group" id="modeGroup">
         <label data-mode="cs"><input type="radio" name="mode" value="cs">两端</label>
         <label data-mode="c"><input type="radio" name="mode" value="c" checked>仅客户端</label>
@@ -272,6 +273,13 @@ const api = {
       return await window.pywebview.api.get_config();
     const r = await fetch('/api/config');
     return await r.json();
+  },
+  async getVersion(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.get_version();
+    const r = await fetch('/api/version');
+    const j = await r.json();
+    return j.version || '';
   },
   async getWorkDir(){
     if(window.pywebview && window.pywebview.api)
@@ -758,6 +766,11 @@ async function init(){
   try{
     const saved = localStorage.getItem('tabStates');
     if(saved) tabStates = JSON.parse(saved);
+  }catch(e){}
+
+  try{
+    const v = await api.getVersion();
+    if(v) $('versionLabel').textContent = 'v' + v;
   }catch(e){}
 
   try{

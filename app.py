@@ -30,7 +30,7 @@ def _data_dir():
 
 CONFIG_FILE = os.path.join(_data_dir(), "tool_config.json")
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 GITHUB_REPO = "bbbz000/TabExporter"
 
 # 复用 export_tables.py 的纯逻辑函数
@@ -333,6 +333,10 @@ def move_tables(names, project_path, move_cs=False):
     return {"ok": ok, "log": "\n".join(logs)}
 
 
+def get_version():
+    return VERSION
+
+
 # ================= 更新检查 =================
 def _version_gt(a, b):
     """比较版本号，a > b 返回 True。"""
@@ -436,6 +440,9 @@ def run_webview():
         def get_config(self):
             return get_config()
 
+        def get_version(self):
+            return get_version()
+
         def get_work_dir(self):
             return get_work_dir()
 
@@ -490,6 +497,8 @@ def _api_handler():
                 self._send(200, json.dumps({"work_dir": get_work_dir()}, ensure_ascii=False))
             elif self.path == "/api/tabs":
                 self._send(200, json.dumps(get_tabs(), ensure_ascii=False))
+            elif self.path == "/api/version":
+                self._send(200, json.dumps({"version": get_version()}, ensure_ascii=False))
             else:
                 self._send(404, "not found")
 
