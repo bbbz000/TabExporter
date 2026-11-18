@@ -141,6 +141,16 @@
   .tag.client{background:var(--tag-client);}
   .tag.server{background:var(--tag-server);}
   .tag.both{background:var(--tag-both);}
+  .svn{
+    font-size:10px; font-weight:600; padding:1px 6px; border-radius:8px;
+    color:#fff; flex:0 0 auto; letter-spacing:.3px;
+  }
+  .svn-m{background:#f59e0b;}
+  .svn-q{background:#9aa5b1;}
+  .svn-a{background:#10b981;}
+  .svn-c{background:#ef4444;}
+  .svn-d{background:#ef4444;}
+  .svn-o{background:#6b7280;}
   .arrow{
     width:36px; height:36px; border-radius:8px; border:1px solid var(--border);
     background:#fff; cursor:pointer; font-size:16px; color:var(--muted); transition:.15s;
@@ -334,6 +344,12 @@ const api = {
     });
     return await r.json();
   },
+  async getSvnStatus(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.get_svn_status();
+    const r = await fetch('/api/svn_status');
+    return await r.json();
+  },
   async getWorkDir(){
     if(window.pywebview && window.pywebview.api)
       return await window.pywebview.api.get_work_dir();
@@ -426,9 +442,15 @@ function tagBadge(tag){
   const txt = tag==='client' ? 'C' : (tag==='server' ? 'S' : '两端');
   return `<span class="tag ${cls}">${txt}</span>`;
 }
+function svnBadge(s){
+  if(!s) return '';
+  const map = {'M':'svn-m','?':'svn-q','A':'svn-a','C':'svn-c','D':'svn-d'};
+  const cls = map[s] || 'svn-o';
+  return `<span class="svn ${cls}">${s}</span>`;
+}
 function itemHtml(t){
   return `<div class="item" data-name="${t.name}" data-tag="${t.tag||''}">
-    ${tagBadge(t.tag)}<span class="name">${t.name}</span><span class="desc">${t.desc||''}</span>
+    ${tagBadge(t.tag)}${svnBadge(t.svn)}<span class="name">${t.name}</span><span class="desc">${t.desc||''}</span>
   </div>`;
 }
 function renderLeft(){
@@ -941,6 +963,12 @@ async function init(){
 
   // 空格键 = 快速移动；上下箭头 = 切换选中项
   document.addEventListener('keydown', e=>{
+    // F5 刷新列表(SVN 状态等)
+    if(e.code === 'F5'){
+      e.preventDefault();
+      load();
+      return;
+    }
     // 搜索框按向下箭头：选中左侧列表第一个
     if(e.target === $('search') && e.code === 'ArrowDown'){
       e.preventDefault();
@@ -1054,6 +1082,11 @@ async function load(){
     const res = await api.listTables();
     const arr = Array.isArray(res) ? res : (res.tables || []);
     allTables = arr;
+    // 获取 SVN 状态并附加
+    try{
+      const svn = await api.getSvnStatus();
+      allTables = allTables.map(t => ({...t, svn: svn[t.file] || ''}));
+    }catch(e){}
     renderAll();
     log(`已加载 ${allTables.length} 张配置表`);
   }catch(e){

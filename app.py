@@ -30,7 +30,7 @@ def _data_dir():
 
 CONFIG_FILE = os.path.join(_data_dir(), "tool_config.json")
 
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 GITHUB_REPO = "bbbz000/TabExporter"
 EXPORT_LOG_FILE = ""  # 当前导出的日志文件路径(运行时设置)
 
@@ -215,11 +215,13 @@ def _decode(b):
 def _run_tabtoy(cmd, cwd):
     """执行 tabtoy，尽量捕获日志；环境禁用管道捕获时降级为直连控制台。"""
     try:
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True)
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True,
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         log = _decode(r.stdout) + _decode(r.stderr)
         return r.returncode == 0, log
     except OSError as e:
-        r = subprocess.run(cmd, cwd=cwd)
+        r = subprocess.run(cmd, cwd=cwd,
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         return r.returncode == 0, f"(当前环境不支持捕获日志，已直接输出到控制台)\n{e}\n"
 
 
@@ -419,7 +421,8 @@ def export_all_and_move(project_path, move_cs=False):
                "-tag_action=nogentab:server|nogenfield_lua:server"]
         EXPORT_LOG_FILE = os.path.join(WORK_DIR, "out", "_export_log.txt")
         with open(EXPORT_LOG_FILE, "w", encoding="utf-8") as logf:
-            proc = subprocess.Popen(cmd, cwd=WORK_DIR, stdout=logf, stderr=subprocess.STDOUT)
+            proc = subprocess.Popen(cmd, cwd=WORK_DIR, stdout=logf, stderr=subprocess.STDOUT,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             proc.wait()
         okc = proc.returncode == 0
         logs.append(f"tabtoy 退出码: {proc.returncode}")
@@ -486,6 +489,29 @@ def open_table(name):
         return {"ok": True, "log": f"已打开: {file_name}"}
     except Exception as e:
         return {"ok": False, "log": f"打开失败: {e}"}
+
+
+def get_svn_status():
+    """获取工作目录下各 .xlsx 的 SVN 状态。返回 {文件名: 状态首字符}。失败返回空 dict。"""
+    if not WORK_DIR:
+        return {}
+    try:
+        r = subprocess.run(["svn", "status"], cwd=WORK_DIR,
+                           capture_output=True, timeout=30,
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        if r.returncode != 0:
+            return {}
+        status_map = {}
+        for line in r.stdout.decode("utf-8", errors="replace").splitlines():
+            if len(line) < 2:
+                continue
+            status = line[0]
+            fname = line[8:].strip() if len(line) > 8 else line[2:].strip()
+            if fname and fname.endswith(".xlsx"):
+                status_map[fname] = status
+        return status_map
+    except Exception:
+        return {}
 
 
 def get_version():
@@ -595,7 +621,8 @@ def apply_update():
         )
         with open(bat_path, "w", encoding="gbk") as f:
             f.write(bat)
-        subprocess.Popen(["cmd", "/c", bat_path], cwd=exe_dir, close_fds=True)
+        subprocess.Popen(["cmd", "/c", bat_path], cwd=exe_dir, close_fds=True,
+                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         # 延迟退出，让前端有时间显示日志
         threading.Timer(1.0, lambda: os._exit(0)).start()
         return {"ok": True, "log": "更新已启动，工具即将重启"}
@@ -640,6 +667,9 @@ def run_webview():
 
         def open_table(self, name):
             return open_table(name)
+
+        def get_svn_status(self):
+            return get_svn_status()
 
         def get_export_log(self):
             return get_export_log()
@@ -704,6 +734,8 @@ def _api_handler():
                 self._send(200, json.dumps({"version": get_version()}, ensure_ascii=False))
             elif self.path == "/api/export_log":
                 self._send(200, json.dumps({"log": get_export_log()}, ensure_ascii=False))
+            elif self.path == "/api/svn_status":
+                self._send(200, json.dumps(get_svn_status(), ensure_ascii=False))
             else:
                 self._send(404, "not found")
 
