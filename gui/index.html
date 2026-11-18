@@ -1014,7 +1014,28 @@ async function checkUpdatePrompt(){
       const ok = confirm(`发现新版本 v${info.latest}（当前 v${info.current}），是否更新？\n\n更新将下载新版本并自动重启。`);
       if(!ok) return;
       log('开始下载更新...');
+      // 轮询下载进度，实时显示到日志
+      let lastLen = 0;
+      let finished = false;
+      const timer = setInterval(async ()=>{
+        if(finished) return;
+        try{
+          const txt = await api.getExportLog();
+          if(txt && txt.length > lastLen){
+            txt.slice(lastLen).split(/\r?\n/).forEach(l=>{ if(l.trim()) log(l); });
+            lastLen = txt.length;
+          }
+        }catch(e){}
+      }, 300);
       const dl = await api.downloadUpdate(info.download_url);
+      finished = true;
+      clearInterval(timer);
+      try{
+        const txt = await api.getExportLog();
+        if(txt && txt.length > lastLen){
+          txt.slice(lastLen).split(/\r?\n/).forEach(l=>{ if(l.trim()) log(l); });
+        }
+      }catch(e){}
       if(dl && dl.ok){
         log(dl.log);
         const ap = await api.applyUpdate();

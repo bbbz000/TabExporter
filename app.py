@@ -30,7 +30,7 @@ def _data_dir():
 
 CONFIG_FILE = os.path.join(_data_dir(), "tool_config.json")
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 GITHUB_REPO = "bbbz000/TabExporter"
 EXPORT_LOG_FILE = ""  # 当前导出的日志文件路径(运行时设置)
 
@@ -542,14 +542,28 @@ def check_update():
 
 
 def download_update(download_url):
-    """下载新 exe 到 .new 文件。返回 {ok, log}。"""
+    """下载新 exe 到 .new 文件，进度实时写日志文件。返回 {ok, log}。"""
+    global EXPORT_LOG_FILE
     if not download_url:
         return {"ok": False, "log": "无下载地址"}
     new_path = os.path.join(_data_dir(), "ExportTables.exe.new")
     try:
         req = urllib.request.Request(download_url, headers={"User-Agent": "TabExporter"})
-        with urllib.request.urlopen(req, timeout=300) as r, open(new_path, "wb") as f:
-            shutil.copyfileobj(r, f)
+        resp = urllib.request.urlopen(req, timeout=300)
+        total = int(resp.headers.get("Content-Length", 0))
+        downloaded = 0
+        EXPORT_LOG_FILE = os.path.join(_data_dir(), "_download_log.txt")
+        with open(new_path, "wb") as f, open(EXPORT_LOG_FILE, "w", encoding="utf-8") as logf:
+            while True:
+                chunk = resp.read(256 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+                if total:
+                    pct = downloaded * 100 // total
+                    logf.write(f"下载中: {downloaded}/{total} 字节 ({pct}%)\n")
+                    logf.flush()
         return {"ok": True, "log": f"已下载: {new_path}"}
     except Exception as e:
         return {"ok": False, "log": f"下载失败: {e}"}
