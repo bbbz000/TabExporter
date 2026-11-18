@@ -30,7 +30,7 @@ def _data_dir():
 
 CONFIG_FILE = os.path.join(_data_dir(), "tool_config.json")
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 GITHUB_REPO = "bbbz000/TabExporter"
 
 # 复用 export_tables.py 的纯逻辑函数
