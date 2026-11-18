@@ -73,10 +73,25 @@ def get_config():
     ))
     if cfg.get("active_work_dir"):
         cfg["active_work_dir"] = os.path.normpath(cfg["active_work_dir"])
+    # 向后兼容：旧版 project_path 字段迁移为 project_paths + active_project_path
+    if "project_paths" not in cfg:
+        old_pp = cfg.get("project_path", "")
+        cfg["project_paths"] = [old_pp] if old_pp else []
+        cfg["active_project_path"] = old_pp
+        cfg.pop("project_path", None)
+    if "active_project_path" not in cfg:
+        paths = cfg.get("project_paths", [])
+        cfg["active_project_path"] = paths[0] if paths else ""
+    cfg["project_paths"] = list(dict.fromkeys(
+        os.path.normpath(p) for p in cfg.get("project_paths", []) if p
+    ))
+    if cfg.get("active_project_path"):
+        cfg["active_project_path"] = os.path.normpath(cfg["active_project_path"])
     return cfg
 
 
-def save_config(work_dirs=None, active_work_dir=None, project_path=None):
+def save_config(work_dirs=None, active_work_dir=None, project_path=None,
+                project_paths=None, active_project_path=None):
     cfg = get_config()
     if work_dirs is not None:
         cfg["work_dirs"] = work_dirs
@@ -84,11 +99,46 @@ def save_config(work_dirs=None, active_work_dir=None, project_path=None):
         cfg["active_work_dir"] = active_work_dir
     if project_path is not None:
         cfg["project_path"] = project_path
+    if project_paths is not None:
+        cfg["project_paths"] = project_paths
+    if active_project_path is not None:
+        cfg["active_project_path"] = active_project_path
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
     except OSError:
         pass
+
+
+def get_project_paths():
+    """返回所有项目路径和当前激活。"""
+    cfg = get_config()
+    return {"paths": cfg.get("project_paths", []), "active": cfg.get("active_project_path", "")}
+
+
+def save_project_path(path):
+    """添加项目路径(若不存在)并设为激活。返回 {ok, log, paths, active}。"""
+    path = os.path.normpath((path or "").strip().strip('"'))
+    if not path:
+        return {"ok": False, "log": "项目路径为空"}
+    cfg = get_config()
+    paths = [os.path.normpath(p) for p in cfg.get("project_paths", []) if p]
+    if path not in paths:
+        paths.append(path)
+    save_config(project_paths=paths, active_project_path=path)
+    return {"ok": True, "log": f"项目路径已添加: {path}", "paths": paths, "active": path}
+
+
+def remove_project_path(path):
+    """移除项目路径。返回 {ok, log, paths, active}。"""
+    path = os.path.normpath((path or "").strip().strip('"'))
+    cfg = get_config()
+    paths = [os.path.normpath(p) for p in cfg.get("project_paths", []) if p and os.path.normpath(p) != path]
+    active = os.path.normpath(cfg.get("active_project_path", "")) if cfg.get("active_project_path") else ""
+    if active == path or active not in paths:
+        active = paths[0] if paths else ""
+    save_config(project_paths=paths, active_project_path=active)
+    return {"ok": True, "log": f"已移除项目路径: {path}", "paths": paths, "active": active}
 
 
 def get_work_dir():
@@ -327,7 +377,7 @@ def move_tables(names, project_path, move_cs=False):
     else:
         logs.append("[跳过] config.cs（未勾选移动 config.cs）")
 
-    save_config(project_path=project_path)
+    save_project_path(project_path)
     ok = failed == 0
     logs.append(f"完成: 成功 {moved} 个，跳过 {skipped} 个，失败 {failed} 个")
     return {"ok": ok, "log": "\n".join(logs)}
@@ -443,6 +493,15 @@ def run_webview():
         def get_config(self):
             return get_config()
 
+        def save_project_path(self, path):
+            return save_project_path(path)
+
+        def get_project_paths(self):
+            return get_project_paths()
+
+        def remove_project_path(self, path):
+            return remove_project_path(path)
+
         def get_version(self):
             return get_version()
 
@@ -500,6 +559,8 @@ def _api_handler():
                 self._send(200, json.dumps({"work_dir": get_work_dir()}, ensure_ascii=False))
             elif self.path == "/api/tabs":
                 self._send(200, json.dumps(get_tabs(), ensure_ascii=False))
+            elif self.path == "/api/project_paths":
+                self._send(200, json.dumps(get_project_paths(), ensure_ascii=False))
             elif self.path == "/api/version":
                 self._send(200, json.dumps({"version": get_version()}, ensure_ascii=False))
             else:
@@ -527,6 +588,16 @@ def _api_handler():
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n) or b"{}")
                 res = remove_tab(payload.get("path", ""))
+                self._send(200, json.dumps(res, ensure_ascii=False))
+            elif self.path == "/api/save_project_path":
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n) or b"{}")
+                res = save_project_path(payload.get("path", ""))
+                self._send(200, json.dumps(res, ensure_ascii=False))
+            elif self.path == "/api/remove_project_path":
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n) or b"{}")
+                res = remove_project_path(payload.get("path", ""))
                 self._send(200, json.dumps(res, ensure_ascii=False))
             elif self.path == "/api/check_update":
                 self._send(200, json.dumps(check_update(), ensure_ascii=False))

@@ -31,6 +31,12 @@
     font-family:Consolas,"Cascadia Mono",monospace;
   }
   .bar input:focus{border-color:var(--primary);}
+  .bar select{
+    flex:1; min-width:220px; padding:7px 10px; border:1px solid var(--border);
+    border-radius:6px; font-size:13px; outline:none; background:#fff;
+    font-family:Consolas,"Cascadia Mono",monospace;
+  }
+  .bar select:focus{border-color:var(--primary);}
   .work-dir{
     flex:1; min-width:220px; padding:7px 10px; background:#eef2f8;
     border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--muted);
@@ -190,8 +196,9 @@
     </div>
     <div class="bar">
       <span class="lbl">项目路径</span>
-      <input id="projectPath" type="text" placeholder="客户端项目根目录，如 C:\workspace\LDLProject\ldl-client" spellcheck="false">
-      <button class="btn btn-ghost" id="btnBrowse">浏览…</button>
+      <select id="projectPathSel"></select>
+      <button class="btn btn-ghost" id="btnBrowse" title="添加项目路径">浏览…</button>
+      <button class="btn btn-ghost" id="btnRemoveProjectPath" title="删除当前项目路径">✖</button>
       <label class="ck"><input type="checkbox" id="chkMoveCs">移动 config.cs</label>
       <button class="btn btn-primary" id="btnMove">移动</button>
     </div>
@@ -271,6 +278,30 @@ const api = {
     const r = await fetch('/api/config');
     return await r.json();
   },
+  async saveProjectPath(path){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.save_project_path(path);
+    const r = await fetch('/api/save_project_path', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path})
+    });
+    return await r.json();
+  },
+  async getProjectPaths(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.get_project_paths();
+    const r = await fetch('/api/project_paths');
+    return await r.json();
+  },
+  async removeProjectPath(path){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.remove_project_path(path);
+    const r = await fetch('/api/remove_project_path', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path})
+    });
+    return await r.json();
+  },
   async getVersion(){
     if(window.pywebview && window.pywebview.api)
       return await window.pywebview.api.get_version();
@@ -346,6 +377,8 @@ let selLeft = new Set(); // 左侧选中
 let selRight = new Set();// 右侧选中
 let mode = 'c';
 let workDir = '';
+let projectPath = '';   // 当前激活的项目路径
+let projectPaths = [];  // 所有项目路径(下拉列表)
 let tabs = [];          // 页签列表(工作目录路径)
 let tabStates = {};     // 每个页签独立状态 {path: {rightSet, selLeft, selRight, search}}
 
@@ -354,6 +387,13 @@ function renderWorkDir(){
   const el = $('workDir');
   if(workDir){ el.textContent = workDir; el.title = workDir; }
   else { el.textContent = '未设置工作目录（点右侧按钮选择配置表目录）'; el.title = ''; }
+}
+function renderProjectPaths(){
+  const sel = $('projectPathSel');
+  let html = projectPaths.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  if(!projectPaths.length) html = '<option value="">未设置项目路径</option>';
+  sel.innerHTML = html;
+  sel.value = projectPath;
 }
 function tagBadge(tag){
   const cls = tag==='client' ? 'client' : (tag==='server' ? 'server' : 'both');
@@ -503,7 +543,7 @@ async function doExport(){
 
 async function doMove(){
   if(!workDir){ log('请先设置工作目录', 'err'); return; }
-  const p = $('projectPath').value.trim();
+  const p = projectPath.trim();
   if(!p){ log('请先设置项目路径', 'err'); return; }
   if(!rightSet.length){ log('待导出列表为空', 'err'); return; }
   const btn = $('btnMove');
@@ -526,7 +566,7 @@ async function doMove(){
 async function doExportAndMove(){
   if(!workDir){ log('请先设置工作目录', 'err'); return; }
   if(!rightSet.length){ log('待导出列表为空', 'err'); return; }
-  const p = $('projectPath').value.trim();
+  const p = projectPath.trim();
   if(!p){ log('请先设置项目路径', 'err'); return; }
   const btn = $('btnExportMove');
   btn.disabled = true;
@@ -732,7 +772,27 @@ async function init(){
   $('btnMove').onclick = doMove;
   $('btnBrowse').onclick = async ()=>{
     const p = await api.chooseDir();
-    if(p) $('projectPath').value = p;
+    if(!p) return;
+    const res = await api.saveProjectPath(p);
+    if(res && res.ok){
+      projectPaths = res.paths || projectPaths;
+      projectPath = res.active || p;
+      renderProjectPaths();
+    }
+  };
+  $('btnRemoveProjectPath').onclick = async ()=>{
+    if(!projectPath){ log('没有可删除的项目路径', 'err'); return; }
+    const res = await api.removeProjectPath(projectPath);
+    if(res && res.ok){
+      projectPaths = res.paths || [];
+      projectPath = res.active || '';
+      renderProjectPaths();
+      log(res.log, 'ok');
+    }
+  };
+  $('projectPathSel').onchange = ()=>{
+    projectPath = $('projectPathSel').value;
+    if(projectPath) api.saveProjectPath(projectPath);
   };
   $('btnSetWorkDir').onclick = addTab;
   $('btnClearLog').onclick = ()=> $('log').innerHTML='';
@@ -756,8 +816,10 @@ async function init(){
   });
 
   try{
-    const cfg = await api.getConfig();
-    if(cfg && cfg.project_path) $('projectPath').value = cfg.project_path;
+    const t = await api.getProjectPaths();
+    projectPaths = (t && t.paths) || [];
+    projectPath = (t && t.active) || '';
+    renderProjectPaths();
   }catch(e){}
 
   try{
