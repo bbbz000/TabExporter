@@ -381,6 +381,7 @@ let projectPath = '';   // 当前激活的项目路径
 let projectPaths = [];  // 所有项目路径(下拉列表)
 let tabs = [];          // 页签列表(工作目录路径)
 let tabStates = {};     // 每个页签独立状态 {path: {rightSet, selLeft, selRight, search}}
+let lastList = 'left';  // 最后操作的列表('left'/'right')，用于键盘上下切换
 
 // ---------- 渲染 ----------
 function renderWorkDir(){
@@ -446,12 +447,13 @@ function log(msg, cls){
 }
 
 // ---------- 交互 ----------
-function bindList(listEl, selSet, onDblClick){
+function bindList(listEl, selSet, onDblClick, listKey){
   let anchor = null; // 范围选择的锚点(上次单选/Ctrl点击的位置)
 
   listEl.addEventListener('click', e=>{
     const item = e.target.closest('.item');
     if(!item) return;
+    lastList = listKey;
     const name = item.dataset.name;
 
     if(e.shiftKey && anchor){
@@ -486,6 +488,22 @@ function bindList(listEl, selSet, onDblClick){
     const item = e.target.closest('.item');
     if(item) onDblClick(item.dataset.name);
   });
+}
+
+function moveSelection(delta){
+  const listEl = lastList === 'right' ? $('rightList') : $('leftList');
+  const selSet = lastList === 'right' ? selRight : selLeft;
+  const items = [...listEl.querySelectorAll('.item')];
+  if(!items.length) return;
+  let idx = items.findIndex(el => selSet.has(el.dataset.name));
+  if(idx === -1) idx = 0;
+  else idx = Math.max(0, Math.min(items.length - 1, idx + delta));
+  selSet.clear();
+  items.forEach(el => el.classList.remove('selected'));
+  const target = items[idx];
+  selSet.add(target.dataset.name);
+  target.classList.add('selected');
+  target.scrollIntoView({ block: 'nearest' });
 }
 
 function addSelected(){
@@ -810,10 +828,10 @@ async function init(){
 
   bindList($('leftList'), selLeft, n=>{
     if(!rightSet.includes(n)){ rightSet.push(n); renderAll(); }
-  });
+  }, 'left');
   bindList($('rightList'), selRight, n=>{
     rightSet = rightSet.filter(x=>x!==n); selRight.delete(n); renderAll();
-  });
+  }, 'right');
 
   try{
     const t = await api.getProjectPaths();
@@ -850,24 +868,36 @@ async function init(){
   initDivider();
   initDividerH();
 
-  // 空格键 = 对当前选中项执行双击"移动"操作（左侧选中→添加，右侧选中→移除）
+  // 空格键 = 快速移动；上下箭头 = 切换选中项
   document.addEventListener('keydown', e=>{
-    if(e.code !== 'Space') return;
     const t = e.target;
     const tag = t && t.tagName;
     if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
-    if(selRight.size){
+    if(e.code === 'Space'){
+      if(lastList === 'right'){
+        if(selRight.size){
+          e.preventDefault();
+          const names = [...selRight];
+          const idx = rightSet.findIndex(n => names.includes(n));
+          rightSet = rightSet.filter(n => !names.includes(n));
+          selRight.clear();
+          if(rightSet.length){
+            const newIdx = Math.min(idx < 0 ? 0 : idx, rightSet.length - 1);
+            selRight.add(rightSet[newIdx]);
+          }
+          renderAll();
+        }
+      } else {
+        if(selLeft.size){
+          e.preventDefault();
+          const names = [...selLeft];
+          names.forEach(n=>{ if(!rightSet.includes(n)) rightSet.push(n); });
+          renderAll();
+        }
+      }
+    } else if(e.code === 'ArrowUp' || e.code === 'ArrowDown'){
       e.preventDefault();
-      const names = [...selRight];
-      rightSet = rightSet.filter(n => !names.includes(n));
-      selRight.clear();
-      renderAll();
-    } else if(selLeft.size){
-      e.preventDefault();
-      const names = [...selLeft];
-      names.forEach(n=>{ if(!rightSet.includes(n)) rightSet.push(n); });
-      selLeft.clear();
-      renderAll();
+      moveSelection(e.code === 'ArrowDown' ? 1 : -1);
     }
   });
 
