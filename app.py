@@ -32,6 +32,7 @@ CONFIG_FILE = os.path.join(_data_dir(), "tool_config.json")
 
 VERSION = "1.0.4"
 GITHUB_REPO = "bbbz000/TabExporter"
+EXPORT_LOG_FILE = ""  # 当前导出的日志文件路径(运行时设置)
 
 # 复用 export_tables.py 的纯逻辑函数
 sys.path.insert(0, TOOL_DIR)
@@ -383,8 +384,97 @@ def move_tables(names, project_path, move_cs=False):
     return {"ok": ok, "log": "\n".join(logs)}
 
 
+def export_all_and_move(project_path, move_cs=False):
+    """全量导出客户端所有表并移动到客户端工程。返回 {ok, log}。"""
+    global EXPORT_LOG_FILE
+    if not WORK_DIR:
+        return {"ok": False, "log": "未设置工作目录"}
+    project_path = (project_path or "").strip().strip('"')
+    if not project_path:
+        return {"ok": False, "log": "请先设置项目路径"}
+    if not os.path.isdir(project_path):
+        return {"ok": False, "log": f"项目路径不存在: {project_path}"}
+
+    logs = [f"工作目录: {WORK_DIR}", "全量导出客户端所有表..."]
+    try:
+        for d in ("client", "client_test", "server", "server_test"):
+            os.makedirs(os.path.join(WORK_DIR, "out", d), exist_ok=True)
+
+        # 清理旧的分表 json，避免被占用导致覆盖失败
+        for d in ("client_test", "server_test"):
+            for f in os.listdir(os.path.join(WORK_DIR, "out", d)):
+                if f.endswith(".json"):
+                    try:
+                        os.remove(os.path.join(WORK_DIR, "out", d, f))
+                    except OSError:
+                        pass
+
+        # 全量导出客户端（用完整 Index.xlsx，生成完整 config.cs）
+        cmd = [et.TABTOY, "-mode=v3", f"-index={et.index_file()}",
+               "-json_dir=./out/client_test",
+               "-binary_dir=./out/client",
+               "-csharp_out=./out/client/config.cs",
+               "-tag_action=nogentab:server",
+               "-package=Game.Hotfix.Config",
+               "-tag_action=nogentab:server|nogenfield_lua:server"]
+        EXPORT_LOG_FILE = os.path.join(WORK_DIR, "out", "_export_log.txt")
+        with open(EXPORT_LOG_FILE, "w", encoding="utf-8") as logf:
+            proc = subprocess.Popen(cmd, cwd=WORK_DIR, stdout=logf, stderr=subprocess.STDOUT)
+            proc.wait()
+        okc = proc.returncode == 0
+        logs.append(f"tabtoy 退出码: {proc.returncode}")
+        if not okc:
+            logs.append("全量导出失败，跳过移动")
+            return {"ok": False, "log": "\n".join(logs)}
+
+        dt_dir = os.path.join(project_path, REL_DATATABLES)
+        code_dir = os.path.join(project_path, REL_CODE)
+        os.makedirs(dt_dir, exist_ok=True)
+        os.makedirs(code_dir, exist_ok=True)
+        logs.append(f"移动所有表到: {dt_dir}")
+
+        moved = failed = 0
+        bin_dir = os.path.join(WORK_DIR, "out", "client")
+        for f in sorted(os.listdir(bin_dir)):
+            if not f.endswith(".bin"):
+                continue
+            try:
+                shutil.copyfile(os.path.join(bin_dir, f),
+                                os.path.join(dt_dir, f[:-4] + ".bytes"))
+                moved += 1
+            except OSError as e:
+                failed += 1
+                logs.append(f"[失败] {f}: {e}")
+
+        if move_cs:
+            cs_src = os.path.join(bin_dir, "config.cs")
+            if os.path.exists(cs_src):
+                try:
+                    shutil.copyfile(cs_src, os.path.join(code_dir, "config.cs"))
+                    logs.append("[复制] config.cs -> 代码目录")
+                except OSError as e:
+                    logs.append(f"[失败] config.cs: {e}")
+
+        save_project_path(project_path)
+        logs.append(f"完成: 移动 {moved} 个，失败 {failed} 个")
+        return {"ok": failed == 0, "log": "\n".join(logs)}
+    except Exception as e:
+        return {"ok": False, "log": f"全量导出并移动异常: {e}"}
+
+
 def get_version():
     return VERSION
+
+
+def get_export_log():
+    """读取当前导出的日志文件内容(实时日志用)。"""
+    if not EXPORT_LOG_FILE:
+        return ""
+    try:
+        with open(EXPORT_LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except Exception:
+        return ""
 
 
 # ================= 更新检查 =================
@@ -490,6 +580,9 @@ def run_webview():
         def move_tables(self, names, project_path, move_cs):
             return move_tables(names, project_path, move_cs)
 
+        def export_all_and_move(self, project_path, move_cs):
+            return export_all_and_move(project_path, move_cs)
+
         def get_config(self):
             return get_config()
 
@@ -504,6 +597,9 @@ def run_webview():
 
         def get_version(self):
             return get_version()
+
+        def get_export_log(self):
+            return get_export_log()
 
         def get_work_dir(self):
             return get_work_dir()
@@ -563,6 +659,8 @@ def _api_handler():
                 self._send(200, json.dumps(get_project_paths(), ensure_ascii=False))
             elif self.path == "/api/version":
                 self._send(200, json.dumps({"version": get_version()}, ensure_ascii=False))
+            elif self.path == "/api/export_log":
+                self._send(200, json.dumps({"log": get_export_log()}, ensure_ascii=False))
             else:
                 self._send(404, "not found")
 
@@ -576,6 +674,11 @@ def _api_handler():
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n) or b"{}")
                 res = move_tables(payload.get("names", []), payload.get("project_path", ""), payload.get("move_cs", False))
+                self._send(200, json.dumps(res, ensure_ascii=False))
+            elif self.path == "/api/export_all_and_move":
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n) or b"{}")
+                res = export_all_and_move(payload.get("project_path", ""), payload.get("move_cs", False))
                 self._send(200, json.dumps(res, ensure_ascii=False))
             elif self.path == "/api/set_work_dir":
                 n = int(self.headers.get("Content-Length", 0))
@@ -618,10 +721,10 @@ def _api_handler():
 
 
 def run_browser(port=0):
-    from http.server import HTTPServer
+    from http.server import ThreadingHTTPServer
 
     Handler = _api_handler()
-    server = HTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     port = server.server_address[1]
     url = f"http://127.0.0.1:{port}/"
     print(f"服务已启动: {url}", flush=True)

@@ -186,6 +186,7 @@
         <label data-mode="s"><input type="radio" name="mode" value="s">仅服务端</label>
       </div>
       <button class="btn btn-ghost" id="btnRefresh">刷新列表</button>
+      <button class="btn btn-ghost" id="btnExportAllMove">全量导出并移动</button>
       <button class="btn btn-primary" id="btnExport">开始导出</button>
       <button class="btn btn-accent" id="btnExportMove">导出并移动</button>
     </div>
@@ -199,7 +200,6 @@
       <select id="projectPathSel"></select>
       <button class="btn btn-ghost" id="btnBrowse" title="添加项目路径">浏览…</button>
       <button class="btn btn-ghost" id="btnRemoveProjectPath" title="删除当前项目路径">✖</button>
-      <label class="ck"><input type="checkbox" id="chkMoveCs">移动 config.cs</label>
       <button class="btn btn-primary" id="btnMove">移动</button>
     </div>
   </header>
@@ -272,6 +272,15 @@ const api = {
     });
     return await r.json();
   },
+  async exportAllAndMove(projectPath, moveCs){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.export_all_and_move(projectPath, moveCs);
+    const r = await fetch('/api/export_all_and_move', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({project_path: projectPath, move_cs: moveCs})
+    });
+    return await r.json();
+  },
   async getConfig(){
     if(window.pywebview && window.pywebview.api)
       return await window.pywebview.api.get_config();
@@ -308,6 +317,13 @@ const api = {
     const r = await fetch('/api/version');
     const j = await r.json();
     return j.version || '';
+  },
+  async getExportLog(){
+    if(window.pywebview && window.pywebview.api)
+      return await window.pywebview.api.get_export_log();
+    const r = await fetch('/api/export_log');
+    const j = await r.json();
+    return j.log || '';
   },
   async getWorkDir(){
     if(window.pywebview && window.pywebview.api)
@@ -568,7 +584,7 @@ async function doMove(){
   btn.disabled = true;
   log(`开始移动 ${rightSet.length} 张表到客户端...`);
   try{
-    const res = await api.moveTables([...rightSet], p, $('chkMoveCs').checked);
+    const res = await api.moveTables([...rightSet], p, false);
     if(res && res.log){
       res.log.split(/\r?\n/).forEach(l=>{ if(l.trim()) log(l, res.ok ? '' : 'err'); });
     }
@@ -599,7 +615,7 @@ async function doExportAndMove(){
       return;
     }
     log('✅ 导出完成，开始移动...');
-    const res2 = await api.moveTables([...rightSet], p, $('chkMoveCs').checked);
+    const res2 = await api.moveTables([...rightSet], p, false);
     if(res2 && res2.log){
       res2.log.split(/\r?\n/).forEach(l=>{ if(l.trim()) log(l, res2.ok ? '' : 'err'); });
     }
@@ -608,6 +624,51 @@ async function doExportAndMove(){
   }catch(e){
     log('导出并移动异常: ' + e, 'err');
   }finally{
+    btn.disabled = false;
+  }
+}
+
+async function doExportAllAndMove(){
+  if(!workDir){ log('请先设置工作目录', 'err'); return; }
+  const p = projectPath.trim();
+  if(!p){ log('请先设置项目路径', 'err'); return; }
+  const btn = $('btnExportAllMove');
+  btn.disabled = true;
+  log('开始全量导出并移动...');
+
+  // 轮询日志文件，实时显示 tabtoy 输出
+  let lastLen = 0;
+  let finished = false;
+  const pollTimer = setInterval(async ()=>{
+    if(finished) return;
+    try{
+      const txt = await api.getExportLog();
+      if(txt && txt.length > lastLen){
+        txt.slice(lastLen).split(/\r?\n/).forEach(l=>{ if(l.trim()) log(l); });
+        lastLen = txt.length;
+      }
+    }catch(e){}
+  }, 500);
+
+  try{
+    const res = await api.exportAllAndMove(p, true);
+    finished = true;
+    clearInterval(pollTimer);
+    try{
+      const txt = await api.getExportLog();
+      if(txt && txt.length > lastLen){
+        txt.slice(lastLen).split(/\r?\n/).forEach(l=>{ if(l.trim()) log(l); });
+      }
+    }catch(e){}
+    if(res && res.ok) log('✅ 全量导出并移动完成', 'ok');
+    else log('❌ 全量导出并移动失败', 'err');
+  }catch(e){
+    finished = true;
+    clearInterval(pollTimer);
+    log('全量导出并移动异常: ' + e, 'err');
+  }finally{
+    finished = true;
+    clearInterval(pollTimer);
     btn.disabled = false;
   }
 }
@@ -787,6 +848,7 @@ async function init(){
   $('btnClear').onclick = clearRight;
   $('btnExport').onclick = doExport;
   $('btnExportMove').onclick = doExportAndMove;
+  $('btnExportAllMove').onclick = doExportAllAndMove;
   $('btnMove').onclick = doMove;
   $('btnBrowse').onclick = async ()=>{
     const p = await api.chooseDir();
