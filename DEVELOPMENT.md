@@ -100,6 +100,10 @@ TabExporter/
 | `export_tables(names, mode)` | 部分导出（核心业务） | `{ok, log}` |
 | `choose_dir()` | tkinter 弹目录选择框 | 路径或空串 |
 | `move_tables(names, project_path, move_cs)` | 复制 bin→bytes 到客户端 | `{ok, log}` |
+| `export_all_and_move(project_path, move_cs)` | 全量导出客户端所有表并移动（实时写日志文件） | `{ok, log}` |
+| `get_project_paths()` / `save_project_path(path)` / `remove_project_path(path)` | 项目路径下拉列表（多路径） | `{paths, active}` / `{ok, log, paths, active}` |
+| `open_table(name)` | 用系统默认程序打开配置表 `.xlsx` | `{ok, log}` |
+| `get_export_log()` | 读取全量导出的实时日志文件内容 | str |
 | `run_webview()` / `run_browser()` / `main()` | 运行壳 | — |
 
 ### 4.3 常量
@@ -222,6 +226,12 @@ if(window.chrome && window.chrome.webview){
 | `api.getTabs()` | `Api.get_tabs` | `GET /api/tabs` |
 | `api.removeTab(path)` | `Api.remove_tab` | `POST /api/remove_tab` |
 | `api.chooseDir()` | `Api.choose_dir` | `POST /api/choose_dir` |
+| `api.getProjectPaths()` | `Api.get_project_paths` | `GET /api/project_paths` |
+| `api.saveProjectPath(path)` | `Api.save_project_path` | `POST /api/save_project_path` |
+| `api.removeProjectPath(path)` | `Api.remove_project_path` | `POST /api/remove_project_path` |
+| `api.exportAllAndMove(path, moveCs)` | `Api.export_all_and_move` | `POST /api/export_all_and_move` |
+| `api.openTable(name)` | `Api.open_table` | `POST /api/open_table` |
+| `api.getExportLog()` | `Api.get_export_log` | `GET /api/export_log` |
 
 注意：pywebview 的方法名保持 Python 下划线风格（`get_tabs`），http 端点是斜杠风格。
 

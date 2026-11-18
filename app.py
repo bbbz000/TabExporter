@@ -462,6 +462,32 @@ def export_all_and_move(project_path, move_cs=False):
         return {"ok": False, "log": f"全量导出并移动异常: {e}"}
 
 
+def open_table(name):
+    """用系统默认程序打开配置表对应的 .xlsx 文件。返回 {ok, log}。"""
+    if not WORK_DIR:
+        return {"ok": False, "log": "未设置工作目录"}
+    name = (name or "").strip()
+    if not name:
+        return {"ok": False, "log": "未指定表名"}
+    try:
+        et.WORK_DIR = WORK_DIR
+        _, _, data_rows = et.load_index()
+        file_name = None
+        for r in data_rows:
+            if str(r[1]).strip() == name:
+                file_name = str(r[2]).strip() if len(r) > 2 and r[2] else ""
+                break
+        if not file_name:
+            return {"ok": False, "log": f"未找到表: {name}"}
+        path = os.path.join(WORK_DIR, file_name)
+        if not os.path.exists(path):
+            return {"ok": False, "log": f"文件不存在: {path}"}
+        os.startfile(path)
+        return {"ok": True, "log": f"已打开: {file_name}"}
+    except Exception as e:
+        return {"ok": False, "log": f"打开失败: {e}"}
+
+
 def get_version():
     return VERSION
 
@@ -598,6 +624,9 @@ def run_webview():
         def get_version(self):
             return get_version()
 
+        def open_table(self, name):
+            return open_table(name)
+
         def get_export_log(self):
             return get_export_log()
 
@@ -679,6 +708,11 @@ def _api_handler():
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n) or b"{}")
                 res = export_all_and_move(payload.get("project_path", ""), payload.get("move_cs", False))
+                self._send(200, json.dumps(res, ensure_ascii=False))
+            elif self.path == "/api/open_table":
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n) or b"{}")
+                res = open_table(payload.get("name", ""))
                 self._send(200, json.dumps(res, ensure_ascii=False))
             elif self.path == "/api/set_work_dir":
                 n = int(self.headers.get("Content-Length", 0))
