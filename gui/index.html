@@ -870,6 +870,21 @@ async function init(){
 
   // 空格键 = 快速移动；上下箭头 = 切换选中项
   document.addEventListener('keydown', e=>{
+    // 搜索框按向下箭头：选中左侧列表第一个
+    if(e.target === $('search') && e.code === 'ArrowDown'){
+      e.preventDefault();
+      lastList = 'left';
+      const items = [...$('leftList').querySelectorAll('.item')];
+      if(items.length){
+        selLeft.clear();
+        items.forEach(el => el.classList.remove('selected'));
+        selLeft.add(items[0].dataset.name);
+        items[0].classList.add('selected');
+        items[0].scrollIntoView({ block: 'nearest' });
+      }
+      $('search').blur();
+      return;
+    }
     const t = e.target;
     const tag = t && t.tagName;
     if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
@@ -897,6 +912,14 @@ async function init(){
       }
     } else if(e.code === 'ArrowUp' || e.code === 'ArrowDown'){
       e.preventDefault();
+      if(e.code === 'ArrowUp' && lastList === 'left'){
+        const items = [...$('leftList').querySelectorAll('.item')];
+        const idx = items.findIndex(el => selLeft.has(el.dataset.name));
+        if(idx <= 0){
+          $('search').focus();
+          return;
+        }
+      }
       moveSelection(e.code === 'ArrowDown' ? 1 : -1);
     }
   });
