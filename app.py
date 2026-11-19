@@ -30,7 +30,7 @@ def _data_dir():
 
 CONFIG_FILE = os.path.join(_data_dir(), "tool_config.json")
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 GITHUB_REPO = "bbbz000/TabExporter"
 EXPORT_LOG_FILE = ""  # 当前导出的日志文件路径(运行时设置)
 
